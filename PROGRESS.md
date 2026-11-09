@@ -166,3 +166,7 @@ The release zips were installed on both devices with `sh install.sh -y`.
   - Over 30 s, Caddy used 0 CPU ticks while MPC used 9% of one core.
   - Caddy's VmRSS is 47540 kB; gateway-settings' is 596 kB.
   - Readings with MPC playing are still open: MPC ignores the injected PLAY presses.
+- **MPC Sample playing, 0.1.1, 2026-11-09:**
+  - The user pressed PLAY. MPC rose from 9.6% of one core (idle) to 16.4% and 15.8% over two 10 s windows (CPU ticks from /proc/<pid>/stat, at 100 Hz).
+  - Caddy used 0 ticks in every window. Its VmRSS stayed at 47272 kB.
+  - Step 6 is complete on both devices.
