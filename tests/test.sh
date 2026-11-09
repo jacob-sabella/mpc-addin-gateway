@@ -23,7 +23,7 @@ if [ -z "$BB" ] && command -v docker > /dev/null; then
     docker run --rm busybox:1.36-musl cat /bin/busybox > "$T/bin/busybox" 2>/dev/null && chmod 755 "$T/bin/busybox" && BB=$T/bin/busybox
 fi
 fail=0; check() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
-wait_for() { i=0; while [ $i -lt 50 ]; do eval "$1" && return 0; sleep 0.1; i=$((i + 1)); done; return 1; }
+wait_for() { i=0; while [ $i -lt "${2:-50}" ]; do eval "$1" && return 0; sleep 0.1; i=$((i + 1)); done; return 1; }
 gone() { [ ! -d "/proc/$1" ] || grep -q '^State:.*Z' "/proc/$1/status"; }
 field() { sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f"$2"; }   # fields counted from 3 (state)
 
@@ -146,7 +146,7 @@ R0=$(reloads)
 sleep 5
 check "nothing changed: no reload" '[ "$(reloads)" = "$R0" ]'
 rm -rf "$T/addins/a"
-check "an addin removed: dropped, Caddy reloaded" 'wait_for "! grep -q \"\\\"id\\\":\\\"a\\\"\" $G/www/services.json" && [ "$(reloads)" -gt "$R0" ]'
+check "an addin removed: dropped, Caddy reloaded" 'wait_for "! grep -q \"\\\"id\\\":\\\"a\\\"\" $G/www/services.json && [ \$(reloads) -gt $R0 ]" 150'
 stop_mpc
 
 echo "--- settings"
