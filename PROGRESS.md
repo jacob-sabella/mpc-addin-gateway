@@ -136,3 +136,7 @@ device can get the lines by hand (they're the device copies, not the repos).
   /data/midi.in, which nothing reads while the midi-inject addin isn't loaded (screen unchanged). The four test presses
   (24 bytes) were trimmed off midi.in again (back to 183 bytes); standalone stopped, temp folders deleted, addins_dir
   restored; the gateway left running.
+- Video with the real addins (2026-11-09): docs/screenshots/real-addins-key37.mp4, Key 37, prerelease 0.1.0 zip,
+  addins_dir = the three repos' declare-web-page manifests (ADDIN_WEB_* declared, nothing forwarded): the start page
+  lists Remote, Commander and FileBrowser as running; then each through the gateway: Remote (MPC's live screen),
+  Commander ("connected": its WebSocket through basic auth), FileBrowser (its own login page). 16 s.
