@@ -1,8 +1,9 @@
 #!/bin/sh
 # Started by mpc_gateway_addin.so each time MPC starts, as its own process (ADDIN_DIR = this folder, MPC_PID = MPC).
-# Writes Caddy's config from mpc_gateway_addin.conf and the routes other addins ship, runs ./caddy, starts it again if
-# it exits (waiting longer each time it fails quickly), reloads it when the device's addresses change, and stops it
-# once MPC has exited. Plain POSIX sh: it runs in the device's BusyBox.
+# Writes Caddy's config from mpc_gateway_addin.conf and the web services other addins declare in their addin.manifest,
+# runs ./caddy, starts it again if it exits (waiting longer each time it fails quickly), keeps the start page's list
+# current, reloads Caddy when the services or the device's addresses change, and stops it once MPC has exited.
+# Plain POSIX sh: it runs in the device's BusyBox.
 set -u
 D=${ADDIN_DIR:?}
 MPC=${MPC_PID:?}
@@ -11,14 +12,17 @@ umask 077
 CONF=mpc_gateway_addin.conf
 PIDFILE=caddy.pid
 USER_NAME=mpc
+TAB=$(printf '\t')
 
-# The last value of a key in the settings file, without surrounding blanks or quotes ("" when it is missing).
-conf() {
-    v=$(sed -n "s/^[[:space:]]*$1[[:space:]]*=//p" "$CONF" 2>/dev/null | tail -n 1)
+# The last value of a key in a key=value file, without surrounding blanks or quotes ("" when it is missing).
+kv() {   # file, key
+    v=$(sed -n "s/^[[:space:]]*$2[[:space:]]*=//p" "$1" 2>/dev/null | tail -n 1)
     v=$(printf '%s' "$v" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"\(.*\)"$/\1/')
     printf '%s' "$v"
 }
+conf() { kv "$CONF" "$1"; }
 say() { echo "$(date '+%Y-%m-%d %H:%M:%S') gateway-run: $*" >> "$LOG"; }
+isport() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
 
 LOG=$(conf log)
 case "$LOG" in /*) ;; *) LOG=/dev/null ;; esac
@@ -26,14 +30,12 @@ case "$LOG" in /*) ;; *) LOG=/dev/null ;; esac
 BIND=$(conf bind); PORT=$(conf port); MEMORY=$(conf memory_mb); ADDINS=$(conf addins_dir)
 FORWARD=$(conf forward); USERCFG=$(conf config); RESCAN=$(conf rescan_s)
 case "$BIND" in 127.0.0.1|0.0.0.0) ;; *) [ -z "$BIND" ] || say "bind=$BIND: only 127.0.0.1 or 0.0.0.0; using 127.0.0.1"; BIND=127.0.0.1 ;; esac
-case "$PORT" in ''|*[!0-9]*) PORT=443 ;; esac
-[ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || PORT=443
+isport "$PORT" || PORT=443
 case "$MEMORY" in ''|*[!0-9]*) MEMORY=64 ;; esac
-case "$RESCAN" in ''|*[!0-9]*) RESCAN=30 ;; esac
-[ "$RESCAN" -ge 5 ] || RESCAN=5
+case "$RESCAN" in ''|*[!0-9]*) RESCAN=10 ;; esac
+[ "$RESCAN" -ge 2 ] || RESCAN=2
 case "$ADDINS" in /*) ;; *) ADDINS=${D%/*} ;; esac   # the folder that holds every addin's folder
-grep -q '^[[:space:]]*forward[[:space:]]*=' "$CONF" 2>/dev/null ||
-    FORWARD="remote:6720:16720 commander:6730:16730 filebrowser:6760:16760"
+ME=${D##*/}
 
 # The password: password= in the settings, or one made at the first start and kept in password.txt (root only).
 # Caddy is given only its bcrypt hash, made again when the password changes (password.sum: its SHA-256).
@@ -41,6 +43,9 @@ PASSWORD=$(conf password)
 case "$PASSWORD" in *[[:space:]]*|*\"*|*\\*)
     say "password: no spaces, quotes or backslashes; using password.txt instead"; PASSWORD="" ;;
 esac
+if [ -n "$PASSWORD" ] && [ ${#PASSWORD} -lt 8 ]; then
+    say "password: shorter than 8 characters, refused; using password.txt instead"; PASSWORD=""
+fi
 if [ -z "$PASSWORD" ]; then
     if [ ! -s password.txt ]; then
         pw=$(tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' < /dev/urandom 2>/dev/null | head -c 20)
@@ -49,10 +54,6 @@ if [ -z "$PASSWORD" ]; then
         say "made a password, in $D/password.txt"
     fi
     PASSWORD=$(head -n 1 password.txt)
-elif [ ${#PASSWORD} -lt 8 ]; then
-    say "password: shorter than 8 characters, refused; using password.txt instead"
-    PASSWORD=""; [ -s password.txt ] && PASSWORD=$(head -n 1 password.txt)
-    [ -n "$PASSWORD" ] || { say "no usable password: set password= (8 or more characters)"; exit 1; }
 fi
 
 chmod 755 caddy 2>/dev/null   # the installer installs it 755; a copy through a FAT card may not have kept that
@@ -85,35 +86,84 @@ sites() {   # the site address list for a port: https://a:port, https://b:port
     s=""; for h in $HOSTS; do s="$s${s:+, }https://$h:$1"; done; printf '%s' "$s"
 }
 
-# Routes: each addin folder's gateway.caddy, and routes.d/*.caddy here (your own). A route is Caddyfile directives
-# inside the gateway's site, behind its password, e.g. handle_path /files/* { reverse_proxy 127.0.0.1:6760 }.
-# Optional first lines name it on the start page: "# name: File Browser" and "# path: /files/".
-SKIP=" "
-routes() {
-    for f in "$ADDINS"/*/gateway.caddy "$D"/routes.d/*.caddy; do
-        [ -f "$f" ] || continue
-        case "$f" in *[!A-Za-z0-9/._-]*) say "route $f: odd characters in its path, skipped"; continue ;; esac
-        case "$SKIP" in *" $f "*) continue ;; esac
-        echo "$f"
+# The web services other addins declare in their addin.manifest (docs/ADDINS.md in mpc-vst-plugins):
+#   ADDIN_WEB_PORT=6760          its web server, on 127.0.0.1
+#   ADDIN_WEB_PORT_SETTING=port  optional: the key in its settings file (ADDIN_CONF) that overrides the port
+#   ADDIN_WEB_PATH=/files/       optional: it works under this path of the gateway; without it, the gateway gives it a
+#                                port of its own, ADDIN_WEB_PORT + 10000 (or the next free one above)
+# Only these keys, ADDIN_NAME and ADDIN_CONF are read, with sed: another addin's manifest is never run. One line per
+# service, tab separated: id, name, port, path ("-" for none), gateway port ("-" for a path). Sorted by id.
+services() {
+    taken=" $PORT "
+    for fw in $FORWARD; do taken="$taken${fw##*:} "; done
+    for m in "$ADDINS"/*/addin.manifest; do
+        [ -f "$m" ] || continue
+        dir=${m%/addin.manifest}; id=${dir##*/}
+        [ "$id" != "$ME" ] || continue
+        case "$id" in *[!A-Za-z0-9_-]*) continue ;; esac
+        p=$(kv "$m" ADDIN_WEB_PORT)
+        [ -n "$p" ] || continue
+        isport "$p" || { say "$id: ADDIN_WEB_PORT=$p is not a port, left out"; continue; }
+        s=$(kv "$m" ADDIN_WEB_PORT_SETTING); c=$(kv "$m" ADDIN_CONF)
+        if [ -n "$s" ]; then
+            case "$s$c" in *[!A-Za-z0-9._-]*|.*) say "$id: odd ADDIN_WEB_PORT_SETTING or ADDIN_CONF, ignored" ;; *)
+                q=$(kv "$dir/$c" "$s")
+                if [ -n "$q" ]; then isport "$q" && p=$q || say "$id: $s=$q in $c is not a port, using $p"; fi ;;
+            esac
+        fi
+        path=$(kv "$m" ADDIN_WEB_PATH)
+        case "$path" in
+            '') path=- ;;
+            /*/) case "$path" in *//*|*[!A-Za-z0-9/._~-]*|*/./*|*/../*) say "$id: ADDIN_WEB_PATH=$path refused"; path=- ;; esac ;;
+            *) say "$id: ADDIN_WEB_PATH must start and end with /, ignored"; path=- ;;
+        esac
+        name=$(kv "$m" ADDIN_NAME | tr -d '\t<>&"')
+        [ -n "$name" ] || name=$id
+        echo "$id$TAB$name$TAB$p$TAB$path"
+    done | sort | while IFS="$TAB" read -r id name p path; do
+        g=-
+        if [ "$path" = - ]; then
+            g=$((p + 10000))
+            while [ $g -le 65535 ] && case "$taken" in *" $g "*) true ;; *) false ;; esac; do g=$((g + 1)); done
+            [ $g -le 65535 ] || { say "$id: no free gateway port above $p, left out"; continue; }
+            taken="$taken$g "
+        fi
+        echo "$id$TAB$name$TAB$p$TAB$path$TAB$g"
     done
 }
-# Forwards: a port of the gateway in front of an addin's own port, for addins that can't live under a path. Each is
-# name:addin_port:gateway_port, used only while /data/mpc-addins/<name> exists.
+# Your own ports in front of local servers, from forward= (name:local_port:gateway_port ...).
 forwards() {
     seen=" $PORT "
     for fw in $FORWARD; do
         IFS=: read -r n a g <<EOF
 $fw
 EOF
-        case "$n:$a:$g" in *[!a-z0-9:-]*|:*|*::*|*:) say "forward $fw: not name:port:port, skipped"; continue ;; esac
-        case "$a$g" in *[!0-9]*) say "forward $fw: not name:port:port, skipped"; continue ;; esac
-        [ "$a" -ge 1 ] && [ "$a" -le 65535 ] && [ "$g" -ge 1 ] && [ "$g" -le 65535 ] ||
-            { say "forward $fw: bad port, skipped"; continue; }
+        case "$n" in ''|*[!a-z0-9-]*) say "forward $fw: not name:port:port, skipped"; continue ;; esac
+        isport "$a" && isport "$g" || { say "forward $fw: not name:port:port, skipped"; continue; }
         case "$seen" in *" $g "*) say "forward $fw: port $g is taken, skipped"; continue ;; esac
-        [ -d "$ADDINS/$n" ] || continue
         seen="$seen$g "
         echo "$n $a $g"
     done
+}
+# Your own routes: routes.d/*.caddy here, Caddyfile directives inside the gateway's site, behind its password.
+SKIP=" "
+routes() {
+    for f in "$D"/routes.d/*.caddy; do
+        [ -f "$f" ] || continue
+        case "$f" in *[!A-Za-z0-9/._-]*) say "route $f: odd characters in its path, skipped"; continue ;; esac
+        case "$SKIP" in *" $f "*) continue ;; esac
+        echo "$f"
+    done
+}
+
+# Whether something listens on 127.0.0.1 or every address at a port: the kernel's socket tables, nothing sent to it.
+listening() {   # port
+    hx=$(printf '%04X' "$1")
+    awk -v p=":$hx" '$4 == "0A" && substr($2, length($2) - 4) == p {
+            a = substr($2, 1, length($2) - 5)
+            if (a == "0100007F" || a == "00000000" || a == "00000000000000000000000000000000" ||
+                a == "00000000000000000000000001000000" || a == "0000000000000000FFFF00000100007F") { f = 1; exit }
+        } END { exit !f }' /proc/net/tcp /proc/net/tcp6 2>/dev/null
 }
 
 auth() {
@@ -121,10 +171,15 @@ auth() {
     echo "		$USER_NAME $HASH"
     echo "	}"
 }
-# Caddy's config: $1 = the file to write, $2 = the routes to put in it.
+proxy() {   # indent, port
+    echo "$1reverse_proxy 127.0.0.1:$2 {"
+    echo "$1	header_up Host 127.0.0.1:$2"
+    echo "$1}"
+}
+# Caddy's config: $1 = the file to write, $2 = your routes to put in it.
 write_caddyfile() {
     {
-        echo "# Written by gateway-run.sh each time MPC starts, from $CONF: edits here are lost."
+        echo "# Written by gateway-run.sh from $CONF and the addins' manifests: edits here are lost."
         echo "# To run Caddy with a Caddyfile of your own, set config=/path/to/it there."
         echo "{"
         echo "	admin unix/$D/admin.sock"
@@ -144,59 +199,142 @@ write_caddyfile() {
         echo "$(sites "$PORT") {"
         echo "	tls internal"
         auth
+        printf '%s\n' "$SERVICES" | while IFS="$TAB" read -r id name p path g; do
+            [ -n "$id" ] && [ "$path" != - ] || continue
+            echo "	# $id"
+            echo "	redir ${path%/} $path"
+            echo "	handle $path* {"
+            proxy "		" "$p"
+            echo "	}"
+        done
         for f in $2; do echo "	import $f"; done
         echo "	handle {"
         echo "		root * $D/www"
         echo "		file_server"
         echo "	}"
         echo "}"
-        forwards | while read -r n a g; do
+        { printf '%s\n' "$SERVICES" | while IFS="$TAB" read -r id name p path g; do
+            [ -n "$id" ] && [ "$g" != - ] && echo "$id $p $g"
+          done; forwards; } | while read -r n a g; do
             echo ""
             echo "# $n"
             echo "$(sites "$g") {"
             echo "	tls internal"
             auth
-            echo "	reverse_proxy 127.0.0.1:$a {"
-            echo "		header_up Host 127.0.0.1:$a"
-            echo "	}"
+            proxy "	" "$a"
             echo "}"
         done
     } > "$1.new" && mv "$1.new" "$1"
 }
 valid() { ./caddy validate --config "$1" --adapter caddyfile > /dev/null 2>> "$LOG"; }
 
-html() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
-# The start page: a link per route (by its "# path:") and per forward, and the certificate authority to trust.
-write_page() {
-    mkdir -p www
+js() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+item() {   # name, up (true/false), path, gateway port: one row of the start page (names hold no < > & " by now)
+    if [ "$2" = true ]; then c=up n=""; else c=down n="not running · "; fi
+    if [ -n "$3" ]; then echo "<li class=\"$c\"><span class=\"dot\"></span><a class=\"name\" href=\"$3\">$1</a><small>$n$3</small></li>"
+    else echo "<li class=\"$c\"><span class=\"dot\"></span><a class=\"name\" data-port=\"$4\" href=\"#\">$1</a><small>${n}port $4</small></li>"; fi
+}
+# services.json and the start page: each declared service and your forwards, with whether it is listening now. Both
+# are written again only when something in them changed.
+write_status() {
+    : > www/items.new
     {
-        echo '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-        echo '<title>MPC Gateway</title>'
-        echo '<style>body{font:16px system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;background:#111;color:#eee}'
-        echo 'a{color:#ffcc33}li{margin:.4rem 0}small{color:#999}</style>'
-        echo "<h1>$(html "$(hostname 2>/dev/null || echo MPC)")</h1><ul>"
-        for f in $1; do
-            n=$(sed -n '1,10s/^#[[:space:]]*name:[[:space:]]*//p' "$f" | head -n 1)
-            p=$(sed -n '1,10s/^#[[:space:]]*path:[[:space:]]*//p' "$f" | head -n 1)
-            [ -n "$n" ] || { n=${f%/gateway.caddy}; n=${n##*/}; n=${n%.caddy}; }
-            case "$p" in /*) case "$p" in *[!A-Za-z0-9/._~-]*) p="" ;; esac ;; *) p="" ;; esac
-            [ -n "$p" ] && echo "<li><a href=\"$p\">$(html "$n")</a> <small>$p</small></li>"
+        echo '{"host":"'"$(js "$(hostname 2>/dev/null)")"'","services":['
+        sep=""
+        printf '%s\n' "$SERVICES" | { while IFS="$TAB" read -r id name p path g; do
+            [ -n "$id" ] || continue
+            listening "$p" && up=true || up=false
+            [ "$path" = - ] && path=""; [ "$g" = - ] && g=0
+            printf '%s{"id":"%s","name":"%s","port":%s,"path":"%s","gateway_port":%s,"up":%s}\n' \
+                "$sep" "$id" "$(js "$name")" "$p" "$path" "$g" "$up"
+            item "$name" "$up" "$path" "$g" >> www/items.new
+            sep=,
         done
         forwards | while read -r n a g; do
-            echo "<li><a class=\"fw\" data-port=\"$g\" href=\"#\">$n</a> <small>port $g</small></li>"
-        done
-        echo '</ul><p><small>To stop the certificate warning, install <a href="/root.crt">this device'"'"'s certificate'
-        echo 'authority</a> on your computer and trust it for websites.</small></p>'
-        echo '<script>for(const a of document.querySelectorAll("a.fw"))a.href="https://"+location.hostname+":"+a.dataset.port+"/"</script>'
-    } > www/index.html.new && mv www/index.html.new www/index.html
-    [ -s data/pki/authorities/local/root.crt ] && cp -f data/pki/authorities/local/root.crt www/root.crt 2>/dev/null
-    return 0
+            listening "$a" && up=true || up=false
+            printf '%s{"id":"%s","name":"%s","port":%s,"path":"","gateway_port":%s,"up":%s,"forward":true}\n' \
+                "$sep" "$n" "$n" "$a" "$g" "$up"
+            item "$n" "$up" "" "$g" >> www/items.new
+            sep=,
+        done; }
+        echo ']}'
+    } > www/services.json.new
+    [ -s www/root.crt ] || { [ -s data/pki/authorities/local/root.crt ] && cp -f data/pki/authorities/local/root.crt www/root.crt; }
+    if [ -f www/services.json ] && [ -f www/index.html ] && [ "$(cat www/services.json.new)" = "$(cat www/services.json)" ]; then
+        rm -f www/services.json.new www/items.new
+        return 0
+    fi
+    mv www/services.json.new www/services.json
+    [ -s www/items.new ] || echo '<li class="empty">No addin declares a web service yet.</li>' > www/items.new
+    write_page www/items.new
+    rm -f www/items.new
 }
 
-# Writes Caddyfile from the settings, the routes and the addresses now. A route Caddy refuses is left out (and logged),
-# so one broken route never stops the others.
+# The start page, with the list as it is now; its script reads services.json again every few seconds.
+write_page() {   # file with the list's rows
+    h=$(hostname 2>/dev/null | tr -d '<>&"'); [ -n "$h" ] || h=MPC
+    {
+    cat <<'EOF'
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MPC Gateway</title>
+<style>
+:root{--bg:#120d1f;--card:#1d1530;--fg:#f1eafc;--dim:#a99bc4;--accent:#ff4fd8;--up:#3ee6a4;--down:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+main{max-width:44rem;margin:0 auto;padding:1.5rem 1rem}h1{font-size:1.4rem;margin:0 0 .2rem}
+p.sub{color:var(--dim);margin:0 0 1.2rem}ul{list-style:none;padding:0;margin:0}
+li{display:flex;align-items:center;gap:.8rem;background:var(--card);border-radius:.6rem;padding:.8rem 1rem;margin:.5rem 0}
+li a.name{color:var(--fg);font-weight:600;text-decoration:none;flex:1}li a.name:hover{color:var(--accent)}
+li.down a.name{color:var(--dim);pointer-events:none}small{color:var(--dim)}
+.dot{width:.7rem;height:.7rem;border-radius:50%;background:var(--down);flex:none}li.up .dot{background:var(--up)}
+.empty{color:var(--dim)}footer{margin-top:2rem;color:var(--dim);font-size:.9rem}footer a{color:var(--accent)}
+</style>
+<main>
+EOF
+    echo "<h1>$h</h1>"
+    echo '<p class="sub">Web services on this device</p>'
+    echo '<ul id="list">'
+    cat "$1"
+    cat <<'EOF'
+</ul>
+<footer>To stop the certificate warning, install <a href="/root.crt">this device's certificate authority</a> on your
+computer and trust it for websites.</footer>
+</main>
+<script>
+// Port services link to this page's host name on their own port. The list refreshes from services.json (by origin:
+// a page opened with user:password@ in its address can't fetch a relative one).
+function ports() {
+  for (const a of document.querySelectorAll("a[data-port]")) a.href = "https://" + location.hostname + ":" + a.dataset.port + "/";
+}
+function el(t, c, x) { const e = document.createElement(t); if (c) e.className = c; if (x) e.textContent = x; return e; }
+async function load() {
+  try {
+    const r = await fetch(location.origin + "/services.json", {cache: "no-store"});
+    if (!r.ok) return;
+    const d = await r.json(), list = document.getElementById("list");
+    list.replaceChildren();
+    if (!d.services.length) list.append(el("li", "empty", "No addin declares a web service yet."));
+    for (const s of d.services) {
+      const li = el("li", s.up ? "up" : "down"), a = el("a", "name", s.name);
+      if (s.path) a.href = s.path; else { a.dataset.port = s.gateway_port; a.href = "#"; }
+      li.append(el("span", "dot"), a, el("small", "", (s.up ? "" : "not running · ") + (s.path || "port " + s.gateway_port)));
+      list.append(li);
+    }
+    ports();
+  } catch (e) { }
+}
+ports(); setInterval(load, 5000);
+</script>
+</html>
+EOF
+    } > www/index.html.new && mv www/index.html.new www/index.html
+}
+
+# Writes Caddyfile from the settings, the services and the addresses now. A route of yours that Caddy refuses is left
+# out (and logged), so one broken route never stops the rest.
 configure() {
-    HOSTS=$(hosts)
     R=$(routes)
     write_caddyfile Caddyfile "$R"
     if ! valid Caddyfile; then
@@ -207,15 +345,18 @@ configure() {
         rm -f Caddyfile.test
         R=$(routes)
         write_caddyfile Caddyfile "$R"
-        valid Caddyfile || { say "Caddy refuses the config even without the routes"; return 1; }
+        valid Caddyfile || { say "Caddy refuses the config even without your routes"; return 1; }
     fi
-    write_page "$R"
+    write_status
 }
 
+HOSTS=$(hosts)
+SERVICES=$(services)
+mkdir -p www
 if [ -n "$USERCFG" ]; then
     CFG=$USERCFG
     [ -r "$CFG" ] || { say "config=$CFG can't be read"; exit 1; }
-    HOSTS=""
+    write_status
 else
     CFG=$D/Caddyfile
     configure || exit 1
@@ -250,7 +391,7 @@ start() {
     CADDY=$!
     echo "$CADDY" > "$PIDFILE"
     STARTED=$(date +%s)
-    say "started Caddy $CADDY on $BIND:$PORT for: $(echo $HOSTS)"
+    say "started Caddy $CADDY on $BIND:$PORT for: $(echo $HOSTS); services: $(printf '%s\n' "$SERVICES" | cut -f1 | tr '\n' ' ')"
 }
 stop() {
     trap - TERM INT HUP
@@ -283,18 +424,23 @@ while kill -0 "$MPC" 2>/dev/null; do
         start
     fi
     now=$(date +%s)
-    if [ -z "$USERCFG" ] && [ $((now - LAST)) -ge "$RESCAN" ]; then
+    if [ $((now - LAST)) -ge "$RESCAN" ]; then
         LAST=$now
-        # the certificate authority appears after Caddy's first start
-        [ -s www/root.crt ] || { [ -s data/pki/authorities/local/root.crt ] && cp -f data/pki/authorities/local/root.crt www/root.crt; }
-        new=$(hosts)
-        if [ "$new" != "$HOSTS" ]; then
-            say "addresses changed: $(echo $new)"
-            if configure && ./caddy reload --config "$CFG" --adapter caddyfile --address "unix/$D/admin.sock" >> "$LOG" 2>&1; then
-                say "Caddy reloaded"
+        if [ -n "$USERCFG" ]; then write_status
+        else
+            nh=$(hosts); ns=$(services)
+            if [ "$nh" != "$HOSTS" ] || [ "$ns" != "$SERVICES" ]; then
+                [ "$nh" != "$HOSTS" ] && say "addresses changed: $(echo $nh)"
+                [ "$ns" != "$SERVICES" ] && say "services changed: $(printf '%s\n' "$ns" | cut -f1 | tr '\n' ' ')"
+                HOSTS=$nh; SERVICES=$ns
+                if configure && ./caddy reload --config "$CFG" --adapter caddyfile --address "unix/$D/admin.sock" >> "$LOG" 2>&1; then
+                    say "Caddy reloaded"
+                else
+                    say "reload failed: starting Caddy again"
+                    kill "$CADDY" 2>/dev/null
+                fi
             else
-                say "reload failed: starting Caddy again"
-                kill "$CADDY" 2>/dev/null
+                write_status
             fi
         fi
     fi
