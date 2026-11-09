@@ -36,6 +36,7 @@ case "$RESCAN" in ''|*[!0-9]*) RESCAN=10 ;; esac
 [ "$RESCAN" -ge 2 ] || RESCAN=2
 case "$ADDINS" in /*) ;; *) ADDINS=${D%/*} ;; esac   # the folder that holds every addin's folder
 ME=${D##*/}
+[ "$PORT" = 443 ] && HOME_URL="https://{host}/" || HOME_URL="https://{host}:$PORT/"   # {host}: Caddy fills it in
 
 # The password: password= in the settings, or one made at the first start and kept in password.txt (root only).
 # Caddy is given only its bcrypt hash, made again when the password changes (password.sum: its SHA-256).
@@ -48,7 +49,7 @@ if [ -n "$PASSWORD" ] && [ ${#PASSWORD} -lt 8 ]; then
 fi
 if [ -z "$PASSWORD" ]; then
     if [ ! -s password.txt ]; then
-        pw=$(tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' < /dev/urandom 2>/dev/null | head -c 20)
+        pw=$(tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' < /dev/urandom 2>/dev/null | dd bs=1 count=20 2>/dev/null)   # the device's head has no -c
         [ ${#pw} -eq 20 ] || { say "can't make a password (no /dev/urandom?)"; exit 1; }
         printf '%s\n' "$pw" > password.txt.new && mv password.txt.new password.txt
         say "made a password, in $D/password.txt"
@@ -117,7 +118,7 @@ services() {
             /*/) case "$path" in *//*|*[!A-Za-z0-9/._~-]*|*/./*|*/../*) say "$id: ADDIN_WEB_PATH=$path refused"; path=- ;; esac ;;
             *) say "$id: ADDIN_WEB_PATH must start and end with /, ignored"; path=- ;;
         esac
-        name=$(kv "$m" ADDIN_NAME | tr -d '\t<>&"')
+        name=$(kv "$m" ADDIN_NAME | tr -d '\t<>&"{}\\')
         [ -n "$name" ] || name=$id
         echo "$id$TAB$name$TAB$p$TAB$path"
     done | sort | while IFS="$TAB" read -r id name p path; do
@@ -208,20 +209,27 @@ write_caddyfile() {
             echo "	}"
         done
         for f in $2; do echo "	import $f"; done
+        echo "	handle_errors 502 {"
+        echo "		respond \"That service isn't running on this device right now. Start page: $HOME_URL\" 502"
+        echo "	}"
         echo "	handle {"
         echo "		root * $D/www"
         echo "		file_server"
         echo "	}"
         echo "}"
         { printf '%s\n' "$SERVICES" | while IFS="$TAB" read -r id name p path g; do
-            [ -n "$id" ] && [ "$g" != - ] && echo "$id $p $g"
-          done; forwards; } | while read -r n a g; do
+            [ -n "$id" ] && [ "$g" != - ] && echo "$id$TAB$name$TAB$p$TAB$g"
+          done; forwards | while read -r n a g; do echo "$n$TAB$n$TAB$a$TAB$g"; done; } |
+        while IFS="$TAB" read -r n name a g; do
             echo ""
             echo "# $n"
             echo "$(sites "$g") {"
             echo "	tls internal"
             auth
             proxy "	" "$a"
+            echo "	handle_errors 502 {"
+            echo "		respond \"$name isn't running on this device right now. Start page: $HOME_URL\" 502"
+            echo "	}"
             echo "}"
         done
     } > "$1.new" && mv "$1.new" "$1"

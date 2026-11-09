@@ -66,6 +66,7 @@ check "the path without its slash is sent to it" "get https://mpc:\$PW@127.0.0.1
 check "a port service: up, on its port + 10000, markup taken out of its name" "svc | grep -q \"\\\"id\\\":\\\"remote\\\",\\\"name\\\":\\\"MPC Remote b\\\",\\\"port\\\":6720,\\\"path\\\":\\\"\\\",\\\"gateway_port\\\":16720,\\\"up\\\":true\""
 check "its port reaches it, Host as through a tunnel, password only" "up 16720 && get https://mpc:\$PW@127.0.0.1:16720/ && grep -qx host=127.0.0.1:6720 /tmp/out"
 check "a service not running is listed as down" "svc | grep -q \"\\\"id\\\":\\\"commander\\\",.*\\\"gateway_port\\\":16730,\\\"up\\\":false\""
+check "its port says so when asked (502 with a message)" "! get https://mpc:\$PW@127.0.0.1:16730/ && grep -q 502 /tmp/err && grep -q \"MPC Commander isn.t running on this device right now\" $G/Caddyfile"
 check "a manifest holding shell code is never run" "[ ! -e /tmp/pwned ] && grep -q \"evil: ADDIN_WEB_PORT=.* is not a port, left out\" $G/log.txt"
 check "your own route works" "get https://mpc:\$PW@127.0.0.1/mine/ && grep -qx mine /tmp/out"
 check "your route Caddy refuses is skipped, logged" "grep -q \"route $G/routes.d/broken.caddy: Caddy refuses it\" $G/log.txt && ! grep -q broken.caddy $G/Caddyfile"

@@ -14,6 +14,8 @@ they only listen on the device itself, so until now you needed one SSH tunnel pe
 page listing every addin that has a web page, each marked running or not, one click away. The addins themselves keep
 listening on the device only; only the gateway faces the network, and nothing gets past it without the password.
 
+![The start page on an MPC Key 37: three addins running, a fourth declared but not running](docs/screenshots/landing.png)
+
 It works on MPC OS standalone devices (MPC Live, One, X, Key and Force, and the MPC Sample), Gen1 and Gen2.
 
 ## Connecting
@@ -48,7 +50,8 @@ Every addin that declares a web page in its `addin.manifest` is listed, with a g
 a red one when it isn't (for example, an addin you switched off with `enabled=0`). Install or remove an addin and the
 list follows within seconds. An addin that works under a path of the gateway opens there (`https://<device>/files/`);
 any other opens on a port of its own, its port plus 10000 (MPC Remote on 6720 becomes `https://<device>:16720`).
-Every one of them asks for the same password.
+Every one of them asks for the same password. A page whose addin isn't running answers with a short message saying
+so, with a link back to the start page.
 
 The gateway only lists what addins declare. It never guesses by looking at which programs listen where or by sending
 requests to ports: MPC's own internal ports look just like an addin's from outside, and a stray request could disturb

@@ -27,7 +27,31 @@ declare in addin.manifest). Each step is ticked with the date and its evidence (
       README in the filebrowser style (not-a-Caddy-project warning, Vibe Coded, Caddy Apache-2.0 credit). Also found
       while checking the Sample: its process is "/usr/bin/MPC Sample", so the library now starts there too (host test
       "the MPC Sample's process (MPC Sample) starts it" ok).
-- [ ] 6. Device test: Key 37 and MPC Sample
+- [x] 6. Device test (2026-11-09, device). Installed from the release zips with the shared installer (`install.sh -y -n`,
+      then bind=0.0.0.0 and addins_dir=/data/gwtest in the gateway's own settings, then an MPC restart). The test
+      addins_dir held copies of Remote/Commander/FileBrowser manifests with ADDIN_WEB_* added; their settings files were
+      read through symlinks to the real ones, so no other addin's files changed. Plus a path-declared demo (a stand-in
+      Caddy on 6799) and an addin with no web service.
+      **Key 37 (Gen1, 3.9.1.2):** up ~4 s after MPC starts. 401 without/with a wrong password (0.17 s, bcrypt 10),
+      200 with it (20 ms cached). Landing page lists Commander/FileBrowser/Remote up, demo down; demo started -> up with no
+      Caddy reload; /demo/x routed (Host 127.0.0.1:6799), /demo -> 302 /demo/. FileBrowser via 16760 (its login page).
+      Remote via 16720: /info, /screen.png, /stream (multipart, 9 frames in 4 s, not buffered), /mcp initialize OK
+      through the Host rewrite. **Remote has no WebSocket** (the screen is the /stream multipart). Commander via 16730:
+      /info, WebSocket /ws -> 101 (401 without the password), and its own web page in headless Chromium through the
+      gateway shows "connected" (wss through basic auth). Certificate: CN Caddy Local Authority, SAN the device IP,
+      verifies with the downloaded root.crt by bare IP. Caddy RSS 46-47 MB, 11 threads. CPU (10 s, % of one core):
+      MPC stopped 0 / MPC 14; playing 0 / 20; playing + screen stream through it <1 / 44 (Remote's encoding, in MPC);
+      playing + 200 page loads 20 / 22. Found and fixed on the device: its BusyBox head has no -c (password generation
+      failed) -> dd bs=1 count=20, plus a host-test lint for head -c/-NUM.
+      **MPC Sample (Gen2 aarch64, 1.3.0.12):** no addins were preloaded (no LD_PRELOAD, /etc not persistent; the
+      installer's drop-in goes to /run). Found and fixed: the library only started in a process named "MPC"; the Sample's
+      is "/usr/bin/MPC Sample" (now both; host test). Up ~1 s after MPC starts; 401/401(0.23 s)/200; landing page with
+      Remote/Commander declared but down, demo up; /demo routed; a down service's port answers 502 "<name> isn't running
+      on this device right now" (added after seeing a bare 502); certificate verifies by IP. Caddy RSS 49-51 MB; 200 page
+      loads 9% of one core. MPC playback not measured on the Sample (no Remote loaded to press PLAY; nothing else touched).
+      **Uninstall:** `uninstall.sh -y` on both; Key 37 drop-in md5 back to c0de1549 (baseline), Sample back to no
+      drop-in and no LD_PRELOAD; nothing on 443/forward ports; no caddy process. The uninstaller keeps the folder
+      (password, certificates: documented); deleted by hand with the test folders. Both devices left running MPC.
 - [ ] 7. mpc-vst-plugins branch (local commit only)
 - [ ] 8. Repo public, release dry run, draft 0.1.0
 
@@ -37,6 +61,9 @@ One line each in their addin.manifest (and the release that ships it):
   together with writing FileBrowser Quantum's `server.baseURL: "/files/"` in filebrowser-run.sh; until then it gets port 16760.
 - mpc-addin-remote: `ADDIN_WEB_PORT=6720` and `ADDIN_WEB_PORT_SETTING=port` (check its settings key name).
 - mpc-addin-commander: `ADDIN_WEB_PORT=6730` and `ADDIN_WEB_PORT_SETTING=port` (check its settings key name).
+- To live under the main port instead of +10000 ports (the user's preference, 2026-11-09): FileBrowser writes
+  `server.baseURL` and declares `ADDIN_WEB_PATH=/files/`; Remote's page and Commander's web app use root-absolute
+  URLs (`/stream`, `/ws`, ...) that must become relative before they can declare a path.
 - mpc-addin-filebrowser and mpc-addin-remote: their is_mpc_process() only accepts "MPC", so they never start on the
   MPC Sample (whose binary is "/usr/bin/MPC Sample"); Commander already accepts both.
 For the device test (step 6) the gateway's own routes.d / forward= can stand in, or the installed manifests on the test

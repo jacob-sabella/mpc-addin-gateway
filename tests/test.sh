@@ -58,6 +58,10 @@ started() { wait_for "[ -s $G/fake.pid ]"; }
 stop_mpc() { kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; wait_for "[ ! -e $G/run.pid ]" || true; }
 svc() { grep -q "$1" "$G/www/services.json"; }
 
+echo "--- the device's BusyBox"
+# The devices' BusyBox (1.36.1, MPC OS 3.x) lacks some options other builds have: head -c and head -NUM (2026-11-09).
+check "no head -c or head -NUM in the script" '! grep -nE "head +-(c|[0-9])" gateway-run.sh'
+
 for SH in /bin/sh ${BB:+busybox}; do
     echo "--- script run by $SH"
     if [ "$SH" = busybox ]; then
@@ -108,6 +112,7 @@ manifest e 'ADDIN_WEB_PORT=6730' 'ADDIN_CONF=e.conf' 'ADDIN_WEB_PORT_SETTING=por
 printf 'port=nope\n' > "$T/addins/e/e.conf"
 manifest f 'ADDIN_WEB_PORT=6740' 'ADDIN_WEB_PATH=nofix'
 manifest g 'ADDIN_WEB_PORT=6750' 'ADDIN_CONF=../../etc/passwd' 'ADDIN_WEB_PORT_SETTING=port'
+manifest h 'ADDIN_NAME="Braces {env.HOME} and \\slash"' 'ADDIN_WEB_PORT=6752'
 manifest 'bad id' 'ADDIN_WEB_PORT=6751'
 manifest gateway2 'ADDIN_NAME="no web service"'
 mkdir -p "$G/routes.d"; printf 'INVALID\n' > "$G/routes.d/broken.caddy"; printf 'respond /ok ok\n' > "$G/routes.d/fine.caddy"
@@ -119,6 +124,7 @@ check "a bad port setting: the manifest port kept" 'svc "\"id\":\"e\",[^}]*\"por
 check "a path without slashes ignored" 'svc "\"id\":\"f\",[^}]*\"path\":\"\"" && grep -q "f: ADDIN_WEB_PATH must start and end with /" "$G/log.txt"'
 check "a settings file outside its folder never read" 'svc "\"id\":\"g\",[^}]*\"port\":6750" && grep -q "g: odd ADDIN_WEB_PORT_SETTING or ADDIN_CONF, ignored" "$G/log.txt"'
 check "an odd folder name and an addin with no web service left out" '! grep -q "bad id" "$G/www/services.json" && ! svc gateway2'
+check "braces and backslashes taken out of a name (no Caddy placeholders)" 'svc "\"id\":\"h\",\"name\":\"Braces env.HOME and slash\"" && grep -q "Braces env.HOME and slash isn.t running" "$G/Caddyfile"'
 check "the gateway never lists itself" '! svc "\"id\":\"gateway\""'
 check "your forward is routed and listed; a bad one skipped" 'grep -q "reverse_proxy 127.0.0.1:7000 {" "$G/Caddyfile" && svc "\"id\":\"mine\",[^}]*\"forward\":true" && grep -q "forward bad:x:1: not name:port:port" "$G/log.txt"'
 check "your route kept, the refused one skipped" 'grep -q "import $G/routes.d/fine.caddy" "$G/Caddyfile" && ! grep -q broken.caddy "$G/Caddyfile" && grep -q "route $G/routes.d/broken.caddy: Caddy refuses it" "$G/log.txt"'
