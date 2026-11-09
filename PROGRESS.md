@@ -91,3 +91,16 @@ device can get the lines by hand (they're the device copies, not the repos).
   deleted, MPC running.
 - MPC Sample: left with the gateway installed and running (bind=0.0.0.0 on its USB link), as the user asked.
 
+
+## Settings page and default login (user request, 2026-11-09)
+- Default login mpc / mpc (user= and password= in the settings); the start page warns while the password is the default.
+- Settings page (/settings/) edits every setting through gateway-settings (static C, src/settings.c) on a socket in the
+  gateway's folder, behind the password; a POST needs X-Gateway-Settings: 1; Save restarts the gateway with them.
+- Host tests PASSED (sh and BusyBox), smoke PASSED armv7 + aarch64, catalog_check OK on both zips.
+- Key 37 (device): 401 without the password, 200 with mpc/mpc, banner shown; API 403 without the header; in Chromium
+  (DevTools protocol) the page loaded the device's settings, Save wrote rescan_s=9, Caddy and the backend restarted
+  (new pids), mpc/mpc 200 afterwards. Then uninstalled; drop-in back to c0de1549; test folders deleted; MPC running.
+- MPC Sample: upgraded to this build, left running at bind=0.0.0.0: mpc/mpc 200, settings page 200, backend running.
+- Draft gateway-addin-v0.1.0 replaced by one from fca7643 (run 42642122508: all tests PASSED); still a draft.
+- Start-page video with declared services (Key 37, addins_dir= test folder of manifest copies with ADDIN_WEB_* lines,
+  nothing of the other addins changed): demo down -> up -> down, 31 s.
