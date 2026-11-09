@@ -140,3 +140,18 @@ device can get the lines by hand (they're the device copies, not the repos).
   addins_dir = the three repos' declare-web-page manifests (ADDIN_WEB_* declared, nothing forwarded): the start page
   lists Remote, Commander and FileBrowser as running; then each through the gateway: Remote (MPC's live screen),
   Commander ("connected": its WebSocket through basic auth), FileBrowser (its own login page). 16 s.
+
+## One login for FileBrowser (user request, 2026-11-09)
+- Gateway aec6cf9: every route to an addin sets X-MPC-Gateway-User to the logged-in user (a client's value replaced).
+  Host test and smoke (armv7, aarch64) PASSED: the stand-in sees user=mpc even when the client sends admin.
+- mpc-addin-filebrowser, local branch declare-web-page, 8eda5dc: gateway_login=1 (default 0) turns on FileBrowser's
+  proxy login on that header, with every file permission (source defaultPermissions), only with bind=127.0.0.1 and the
+  gateway addin installed beside it; otherwise off and logged. Admin password login stays. Found while testing and
+  fixed in the same commit: a new run now stops an earlier run's script first (run.pid), as the gateway does.
+  FileBrowser 2.0.1 facts (QEMU, real binary): password and proxy methods coexist; a header naming the password admin
+  is refused ("invalid login method"); userDefaults.permissions is an unknown field (admin can't be granted that way).
+  Host test PASSED; smoke PASSED armv7 + aarch64.
+- Key 37 (device): gateway 0.1.1 build + a test copy of the new FileBrowser (port 6761, gateway_login=1, own folder,
+  the installed FileBrowser untouched): through the gateway, FileBrowser opened straight to the drives as user mpc
+  (loginMethod proxy, every permission), no FileBrowser login; a client header naming admin still came in as mpc.
+  Cleaned up: test copy stopped and deleted, gateway uninstalled, drop-in c0de1549, MPC running.
