@@ -59,7 +59,12 @@ declare in addin.manifest). Each step is ticked with the date and its evidence (
       tools/test_catalog.py: 181 tests, 20 failures, all StoreTest "error: MPC did not stop"; the same failure on a
       clean origin/main checkout, so environmental here, not this change. Gateway manifest gets ADDIN_LOGIN=1 only once
       a release pins tools that accept it (the release now pins 03af9a4, whose checker refuses unknown keys).
-- [ ] 8. Repo public, release dry run, draft 0.1.0
+- [x] 8. Repo public, release dry run, draft 0.1.0 (2026-11-09). github.com/jacob-sabella/mpc-addin-gateway (public, pushed over
+      SSH). Release dry run 42636740879: success (test.sh PASSED, smoke PASSED armv7 + aarch64, catalog_check on both zips).
+      Release 42637263468: draft gateway-addin-v0.1.0 with both zips, draft=true, not published (publish as a prerelease
+      only when asked). The draft's aarch64 zip is installed on the MPC Sample at the user's request (2026-11-09), bind=0.0.0.0
+      (its only network is the USB link): 401 without the password, 200 with it. The shared installer printed
+      "head: invalid option -- 'c'": fixed on the mpc-vst-plugins branch (63471af, dd), not yet in the pinned tools.
 
 ## Changes other addins need (not made here)
 One line each in their addin.manifest (and the release that ships it):
