@@ -170,3 +170,7 @@ The release zips were installed on both devices with `sh install.sh -y`.
   - The user pressed PLAY. MPC rose from 9.6% of one core (idle) to 16.4% and 15.8% over two 10 s windows (CPU ticks from /proc/<pid>/stat, at 100 Hz).
   - Caddy used 0 ticks in every window. Its VmRSS stayed at 47272 kB.
   - Step 6 is complete on both devices.
+
+## 1.0.0 (2026-11-09)
+- Both devices were upgraded in place from the 1.0.0 release zips (`install.sh -y`); their settings were kept (bind=0.0.0.0).
+- **MPC Key 37 and MPC Sample:** 401 without a login, 200 as mpc/mpc, and the settings API answers. Remote, Commander and FileBrowser are all listed up, from their declared manifests (local declare-web-page builds).
