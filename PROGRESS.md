@@ -18,7 +18,10 @@ declare in addin.manifest). Each step is ticked with the date and its evidence (
       refreshes every 5 s from location.origin), written only when it changed; Caddy reloads only when the services or
       addresses change (smoke: a service starting later turns up "without a reload"; an addin removed while running
       disappears and its port closes, the other routes survive). Headless Chromium screenshot checked by eye.
-- [ ] 4. Host tests (tests/test.sh) + smoke coverage for the keys
+- [x] 4. Host tests + smoke coverage (2026-11-09, offline). tests/test.sh: 59/59 ok, PASSED (library launch rules in
+      /bin/sh and a static BusyBox from busybox:1.36-musl; manifests: collisions move up past forward= ports, `..` paths,
+      bad ports, a settings file outside the addin's folder never read, no reload when nothing changed, reload on
+      install/removal; setting fallbacks; refusals). Smoke (real Caddy, QEMU) covers the keys, up/down and a removed addin.
 - [ ] 5. Workflows + README
 - [ ] 6. Device test: Key 37 and MPC Sample
 - [ ] 7. mpc-vst-plugins branch (local commit only)
