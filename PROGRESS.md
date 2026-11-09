@@ -56,8 +56,10 @@ declare in addin.manifest). Each step is ticked with the date and its evidence (
       the installer, release_addin.py and catalog_check.py read and check ADDIN_WEB_PORT / _PORT_SETTING / _PATH and
       ADDIN_LOGIN; the network prompt asks for a password with ADDIN_LOGIN=1 instead of "no login"; ADDINS.md,
       CATALOG_SPEC.md, NOTES.md (dated device facts). tools/test_addin.sh: "installer: all passed" (sh and BusyBox).
-      tools/test_catalog.py: 181 tests, 20 failures, all StoreTest "error: MPC did not stop"; the same failure on a
-      clean origin/main checkout, so environmental here, not this change. Gateway manifest gets ADDIN_LOGIN=1 only once
+      tools/test_catalog.py: 181 tests OK. (A first run had 20 StoreTest failures, "MPC did not stop", the same on clean
+      origin/main: three orphaned "MPC Sample" stand-ins from another repo's host tests, alive since 2026-11-06, made
+      pidof "MPC Sample" true. Killed; StoreTest 33 OK, then the full suite 181 OK.) Also 63471af: the shared installer's
+      head -c (absent from the devices' BusyBox) replaced by dd, with a test_addin.sh lint that fails on the old line. Gateway manifest gets ADDIN_LOGIN=1 only once
       a release pins tools that accept it (the release now pins 03af9a4, whose checker refuses unknown keys).
 - [x] 8. Repo public, release dry run, draft 0.1.0 (2026-11-09). github.com/jacob-sabella/mpc-addin-gateway (public, pushed over
       SSH). Release dry run 42636740879: success (test.sh PASSED, smoke PASSED armv7 + aarch64, catalog_check on both zips).
@@ -79,3 +81,13 @@ One line each in their addin.manifest (and the release that ships it):
   MPC Sample (whose binary is "/usr/bin/MPC Sample"); Commander already accepts both.
 For the device test (step 6) the gateway's own routes.d / forward= can stand in, or the installed manifests on the test
 device can get the lines by hand (they're the device copies, not the repos).
+
+## Stop-condition evidence (2026-11-09)
+- Video: the start page on the Key 37 from the draft 0.1.0 armv7 zip (bind=0.0.0.0, forward= to Remote, Commander,
+  FileBrowser and a stand-in "demo" on 6799), 31 s at real speed, 64 frames of the live page: demo down (23 frames),
+  up about 7 s after a stand-in server started on 6799 (21), down about 5 s after it stopped (20). Before recording: 401
+  without the password, 200 with it; 16720/info, 16730/ and 16760/ all 200 through the gateway.
+- Key 37 afterwards: uninstalled, drop-in md5 c0de1549 (baseline), no caddy, 443 and the forward ports closed, folder
+  deleted, MPC running.
+- MPC Sample: left with the gateway installed and running (bind=0.0.0.0 on its USB link), as the user asked.
+
