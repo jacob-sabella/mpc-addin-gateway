@@ -117,3 +117,6 @@ device can get the lines by hand (they're the device copies, not the repos).
   "MPC"; FileBrowser isn't installed there; Remote and Commander aren't loaded). Remote has no WebSocket (its screen is
   the multipart /stream, routed and tested on the Key 37); CPU while playing on the Sample needs something to press
   PLAY there (Remote isn't running on it).
+- Video (stop-condition evidence): docs/screenshots/landing-key37-declared.mp4, the start page served by the Key 37,
+  services from declared manifests (copies with ADDIN_WEB_* lines in an addins_dir test folder), the declared /demo/
+  going down -> up -> down as a stand-in starts and stops; 31 s at real speed, 64 frames of the live page.
