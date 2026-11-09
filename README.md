@@ -14,7 +14,7 @@ they only listen on the device itself, so until now you needed one SSH tunnel pe
 page listing every addin that has a web page, each marked running or not, one click away. The addins themselves keep
 listening on the device only; only the gateway faces the network, and nothing gets past it without the password.
 
-![The start page on an MPC Key 37: three addins running, a fourth declared but not running](docs/screenshots/landing.png)
+![The start page on an MPC Key 37: three addins running, a fourth declared but not running, and the default-password warning](docs/screenshots/landing.png)
 
 It works on MPC OS standalone devices (MPC Live, One, X, Key and Force, and the MPC Sample), Gen1 and Gen2.
 

@@ -104,3 +104,16 @@ device can get the lines by hand (they're the device copies, not the repos).
 - Draft gateway-addin-v0.1.0 replaced by one from fca7643 (run 42642122508: all tests PASSED); still a draft.
 - Start-page video with declared services (Key 37, addins_dir= test folder of manifest copies with ADDIN_WEB_* lines,
   nothing of the other addins changed): demo down -> up -> down, 31 s.
+- Re-measured with the draft's armv7 zip (fca7643) on the Key 37, PLAY/STOP pressed through the gateway (Remote via
+  forward=): idle Caddy 0% / MPC 13% of one core; playing 0% / 19%; playing + 200 page loads 22% / 16%. Caddy RSS
+  46-48 MB, gateway-settings RSS 376 kB. Then uninstalled; drop-in c0de1549; MPC running.
+- MPC Sample, declared services through its own settings page API (addins_dir set to a test folder with copies of its
+  real remote and commander manifests plus ADDIN_WEB_* lines, and a declared /demo/): listed from the manifests, remote
+  and commander down (not loaded on the Sample), /demo/ 502 while down, served and "up" once a stand-in listened.
+  addins_dir restored through the API; folder deleted; gateway left running as the user asked.
+- tested.json: the 0.1.0 entries for both devices (2026-11-09) cover this build (fca7643), tested on both today.
+- Not tested, needs the user (outside this loop's authorization): Remote / Commander / FileBrowser declaring in their
+  own manifests (their repos), and running them on the Sample (Remote and FileBrowser only start in a process named
+  "MPC"; FileBrowser isn't installed there; Remote and Commander aren't loaded). Remote has no WebSocket (its screen is
+  the multipart /stream, routed and tested on the Key 37); CPU while playing on the Sample needs something to press
+  PLAY there (Remote isn't running on it).
