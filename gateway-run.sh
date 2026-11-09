@@ -11,7 +11,6 @@ cd "$D" || exit 1
 umask 077
 CONF=mpc_gateway_addin.conf
 PIDFILE=caddy.pid
-USER_NAME=mpc
 TAB=$(printf '\t')
 
 # The last value of a key in a key=value file, without surrounding blanks or quotes ("" when it is missing).
@@ -38,26 +37,19 @@ case "$ADDINS" in /*) ;; *) ADDINS=${D%/*} ;; esac   # the folder that holds eve
 ME=${D##*/}
 [ "$PORT" = 443 ] && HOME_URL="https://{host}/" || HOME_URL="https://{host}:$PORT/"   # {host}: Caddy fills it in
 
-# The password: password= in the settings, or one made at the first start and kept in password.txt (root only).
-# Caddy is given only its bcrypt hash, made again when the password changes (password.sum: its SHA-256).
+# The user name and password: user= and password= in the settings (the settings page writes them), both mpc when empty
+# or refused. Caddy is given only the password's bcrypt hash, made again when it changes (password.sum: its SHA-256).
+USER_NAME=$(conf user)
+case "$USER_NAME" in ''|*[!A-Za-z0-9._-]*) [ -z "$USER_NAME" ] || say "user=$USER_NAME: letters, digits, . _ - only; using mpc"; USER_NAME=mpc ;; esac
 PASSWORD=$(conf password)
-case "$PASSWORD" in *[[:space:]]*|*\"*|*\\*)
-    say "password: no spaces, quotes or backslashes; using password.txt instead"; PASSWORD="" ;;
+case "$PASSWORD" in *[[:space:]]*|*\"*|*\'*|*\\*)
+    say "password: no spaces, quotes or backslashes; using the default, mpc"; PASSWORD="" ;;
 esac
-if [ -n "$PASSWORD" ] && [ ${#PASSWORD} -lt 8 ]; then
-    say "password: shorter than 8 characters, refused; using password.txt instead"; PASSWORD=""
-fi
-if [ -z "$PASSWORD" ]; then
-    if [ ! -s password.txt ]; then
-        pw=$(tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' < /dev/urandom 2>/dev/null | dd bs=1 count=20 2>/dev/null)   # the device's head has no -c
-        [ ${#pw} -eq 20 ] || { say "can't make a password (no /dev/urandom?)"; exit 1; }
-        printf '%s\n' "$pw" > password.txt.new && mv password.txt.new password.txt
-        say "made a password, in $D/password.txt"
-    fi
-    PASSWORD=$(head -n 1 password.txt)
-fi
+[ -n "$PASSWORD" ] || PASSWORD=mpc
+DEFAULT_PW=0; [ "$PASSWORD" = mpc ] && DEFAULT_PW=1
+rm -f password.txt   # 0.1.0 drafts made one; the default is mpc now
 
-chmod 755 caddy 2>/dev/null   # the installer installs it 755; a copy through a FAT card may not have kept that
+chmod 755 caddy gateway-settings 2>/dev/null   # the installer installs them 755; a copy through a FAT card may not have kept that
 export GOMAXPROCS=1 GOMEMLIMIT="${MEMORY}MiB" HOME="$D" XDG_DATA_HOME="$D/xdg" XDG_CONFIG_HOME="$D/xdg"
 
 SUM=$(printf '%s' "$PASSWORD" | sha256sum | cut -d' ' -f1)
@@ -115,6 +107,7 @@ services() {
         path=$(kv "$m" ADDIN_WEB_PATH)
         case "$path" in
             '') path=- ;;
+            /settings/*) say "$id: ADDIN_WEB_PATH=$path is the gateway's own; a port of its own instead"; path=- ;;
             /*/) case "$path" in *//*|*[!A-Za-z0-9/._~-]*|*/./*|*/../*) say "$id: ADDIN_WEB_PATH=$path refused"; path=- ;; esac ;;
             *) say "$id: ADDIN_WEB_PATH must start and end with /, ignored"; path=- ;;
         esac
@@ -200,6 +193,12 @@ write_caddyfile() {
         echo "$(sites "$PORT") {"
         echo "	tls internal"
         auth
+        echo "	# the settings page's backend (gateway-settings, on a socket in this folder)"
+        echo "	handle /settings/api {"
+        echo "		reverse_proxy unix/$D/settings.sock"
+        echo "	}"
+        echo "	redir /settings /settings/"
+        echo "	rewrite /settings/ /settings.html"
         printf '%s\n' "$SERVICES" | while IFS="$TAB" read -r id name p path g; do
             [ -n "$id" ] && [ "$path" != - ] || continue
             echo "	# $id"
@@ -278,6 +277,118 @@ write_status() {
     rm -f www/items.new
 }
 
+# Both pages' look (dark, neon accents).
+style() {
+    cat <<'EOF'
+<style>
+:root{--bg:#120d1f;--card:#1d1530;--fg:#f1eafc;--dim:#a99bc4;--accent:#ff4fd8;--up:#3ee6a4;--down:#ff6b6b;--warn:#ffb84f}
+*{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+main{max-width:44rem;margin:0 auto;padding:1.5rem 1rem}h1{font-size:1.4rem;margin:0 0 .2rem;flex:1}
+header{display:flex;align-items:baseline;gap:1rem}a.nav{color:var(--accent);text-decoration:none;font-weight:600}
+p.sub{color:var(--dim);margin:0 0 1.2rem}ul{list-style:none;padding:0;margin:0}
+li{display:flex;align-items:center;gap:.8rem;background:var(--card);border-radius:.6rem;padding:.8rem 1rem;margin:.5rem 0}
+li a.name{color:var(--fg);font-weight:600;text-decoration:none;flex:1}li a.name:hover{color:var(--accent)}
+li.down a.name{color:var(--dim);pointer-events:none}small{color:var(--dim)}
+.dot{width:.7rem;height:.7rem;border-radius:50%;background:var(--down);flex:none}li.up .dot{background:var(--up)}
+.empty{color:var(--dim)}footer{margin-top:2rem;color:var(--dim);font-size:.9rem}footer a,.warn a{color:var(--accent)}
+.warn{border:1px solid var(--warn);color:var(--warn);border-radius:.6rem;padding:.7rem 1rem;margin:0 0 1rem}
+form{display:grid;gap:.9rem}label{display:grid;gap:.25rem;font-weight:600}label small{font-weight:400}
+input,select{font:inherit;color:var(--fg);background:var(--card);border:1px solid #3a2d57;border-radius:.4rem;padding:.5rem .6rem;width:100%}
+input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent}
+label.check{display:flex;align-items:center;gap:.6rem}label.check input{width:auto}
+fieldset{border:1px solid #3a2d57;border-radius:.6rem;padding:.8rem 1rem;display:grid;gap:.9rem}legend{color:var(--dim);padding:0 .4rem}
+button{font:inherit;font-weight:700;color:#120d1f;background:var(--accent);border:0;border-radius:.5rem;padding:.7rem 1.2rem;cursor:pointer;justify-self:start}
+button:disabled{opacity:.5;cursor:default}#msg{min-height:1.4em}#msg.err{color:var(--down)}#msg.ok{color:var(--up)}
+</style>
+EOF
+}
+
+# The settings page: a form over gateway-settings (/settings/api). Static: it reads the settings when it opens.
+write_settings_page() {
+    {
+    cat <<'EOF'
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MPC Gateway settings</title>
+EOF
+    style
+    cat <<'EOF'
+<main>
+<header><h1>Settings</h1><a class="nav" href="/">Start page</a></header>
+<p class="sub">Saved to the gateway's settings file. The gateway starts again with them in a few seconds.</p>
+<form id="f" autocomplete="off">
+<fieldset><legend>Login</legend>
+<label>User name<input name="user" required maxlength="32" pattern="[A-Za-z0-9._\-]+"></label>
+<label>New password<input name="password" type="password" maxlength="128" placeholder="unchanged">
+<small id="pwnote">No spaces, quotes or backslashes. Leave empty to keep the one there is.</small></label>
+</fieldset>
+<fieldset><legend>Network</legend>
+<label>Listen on<select name="bind"><option value="127.0.0.1">This device only (reach it through an SSH tunnel)</option>
+<option value="0.0.0.0">Every network the device is on</option></select></label>
+<label>HTTPS port<input name="port" type="number" min="1" max="65535" required></label>
+<label>Your own forwards<input name="forward" placeholder="name:local_port:gateway_port ..." pattern="([A-Za-z0-9_\-]+:[0-9]+:[0-9]+)?( [A-Za-z0-9_\-]+:[0-9]+:[0-9]+)*">
+<small>For servers that declare nothing: each one a port of the gateway, behind the password.</small></label>
+</fieldset>
+<fieldset><legend>Advanced</legend>
+<label class="check"><input name="enabled" type="checkbox">Run the gateway <small>(at MPC's next start)</small></label>
+<label>CPU priority (nice)<input name="nice" type="number" min="0" max="19" required><small>0 to 19, higher is gentler; at MPC's next start.</small></label>
+<label>Memory limit, MB<input name="memory_mb" type="number" min="16" max="4096" required></label>
+<label>Look for addins and addresses every, seconds<input name="rescan_s" type="number" min="2" max="3600" required></label>
+<label>Log file<input name="log" placeholder="none" pattern="(\/[A-Za-z0-9._\-]+)*"></label>
+<label>Your own Caddyfile<input name="config" placeholder="none: made from these settings" pattern="(\/[A-Za-z0-9._\-]+)*">
+<small>Replaces everything here but the login, the CPU priority and the memory limit, the settings page included.</small></label>
+<label>Folder of the addins<input name="addins_dir" placeholder="this folder's parent" pattern="(\/[A-Za-z0-9._\-]+)*"></label>
+</fieldset>
+<button id="save">Save</button>
+<p id="msg" role="status"></p>
+</form>
+</main>
+<script>
+// Fetched by origin: a page opened with user:password@ in its address can't fetch a relative URL.
+const api = location.origin + "/settings/api", f = document.getElementById("f"), msg = document.getElementById("msg");
+const keys = ["user", "bind", "port", "forward", "nice", "memory_mb", "rescan_s", "log", "config", "addins_dir"];
+const say = (t, c) => { msg.textContent = t; msg.className = c || ""; };
+async function load() {
+  try {
+    const r = await fetch(api, {cache: "no-store"}), d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    for (const k of keys) f.elements[k].value = d[k] || "";
+    f.elements.user.value ||= "mpc"; f.elements.bind.value ||= "127.0.0.1"; f.elements.port.value ||= "443";
+    f.elements.nice.value ||= "19"; f.elements.memory_mb.value ||= "64"; f.elements.rescan_s.value ||= "10";
+    f.elements.enabled.checked = d.enabled !== "0";
+    if (d.default_password) document.getElementById("pwnote").textContent =
+      "The password is still the default, mpc. No spaces, quotes or backslashes.";
+  } catch (e) { say("Couldn't read the settings: " + e.message, "err"); }
+}
+f.addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const b = new URLSearchParams();
+  for (const k of keys) b.set(k, f.elements[k].value.trim());
+  b.set("enabled", f.elements.enabled.checked ? "1" : "0");
+  if (f.elements.password.value) b.set("password", f.elements.password.value);
+  document.getElementById("save").disabled = true; say("Saving…");
+  try {
+    const r = await fetch(api, {method: "POST", body: b, headers: {"X-Gateway-Settings": "1"}}), d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    const port = b.get("port"), local = ["127.0.0.1", "localhost", "::1"].includes(location.hostname);
+    if (b.get("bind") === "127.0.0.1" && !local) {
+      say("Saved. The gateway now listens on the device only: reach it through an SSH tunnel to port " + port + ".", "ok");
+      return;
+    }
+    const url = local ? location.origin + "/" : "https://" + location.hostname + (port === "443" ? "" : ":" + port) + "/";
+    say("Saved. The gateway is starting again with the new settings; opening " + url + " …", "ok");
+    setTimeout(() => { location.href = url; }, 7000);
+  } catch (e) { say("Not saved: " + e.message, "err"); document.getElementById("save").disabled = false; }
+});
+load();
+</script>
+</html>
+EOF
+    } > www/settings.html.new && mv www/settings.html.new www/settings.html
+}
+
 # The start page, with the list as it is now; its script reads services.json again every few seconds.
 write_page() {   # file with the list's rows
     h=$(hostname 2>/dev/null | tr -d '<>&"'); [ -n "$h" ] || h=MPC
@@ -288,21 +399,14 @@ write_page() {   # file with the list's rows
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MPC Gateway</title>
-<style>
-:root{--bg:#120d1f;--card:#1d1530;--fg:#f1eafc;--dim:#a99bc4;--accent:#ff4fd8;--up:#3ee6a4;--down:#ff6b6b}
-*{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-main{max-width:44rem;margin:0 auto;padding:1.5rem 1rem}h1{font-size:1.4rem;margin:0 0 .2rem}
-p.sub{color:var(--dim);margin:0 0 1.2rem}ul{list-style:none;padding:0;margin:0}
-li{display:flex;align-items:center;gap:.8rem;background:var(--card);border-radius:.6rem;padding:.8rem 1rem;margin:.5rem 0}
-li a.name{color:var(--fg);font-weight:600;text-decoration:none;flex:1}li a.name:hover{color:var(--accent)}
-li.down a.name{color:var(--dim);pointer-events:none}small{color:var(--dim)}
-.dot{width:.7rem;height:.7rem;border-radius:50%;background:var(--down);flex:none}li.up .dot{background:var(--up)}
-.empty{color:var(--dim)}footer{margin-top:2rem;color:var(--dim);font-size:.9rem}footer a{color:var(--accent)}
-</style>
-<main>
 EOF
-    echo "<h1>$h</h1>"
+    style
+    echo "<main><header><h1>$h</h1><a class=\"nav\" href=\"/settings/\">Settings</a></header>"
     echo '<p class="sub">Web services on this device</p>'
+    if [ "$DEFAULT_PW" = 1 ]; then
+        if [ "$BIND" = 0.0.0.0 ]; then w="anyone on your network can log in with it."; else w="change it before you open the gateway to your network."; fi
+        echo "<p class=\"warn\">This gateway still has the default password, mpc: $w <a href=\"/settings/\">Change it</a></p>"
+    fi
     echo '<ul id="list">'
     cat "$1"
     cat <<'EOF'
@@ -361,6 +465,8 @@ configure() {
 HOSTS=$(hosts)
 SERVICES=$(services)
 mkdir -p www
+rm -f www/index.html   # the page shows the settings of this start (the default password banner), so it's made again
+write_settings_page
 if [ -n "$USERCFG" ]; then
     CFG=$USERCFG
     [ -r "$CFG" ] || { say "config=$CFG can't be read"; exit 1; }
@@ -391,7 +497,9 @@ stop_old() {   # pid file, what the command line must hold
 }
 stop_old run.pid 'gateway-run\.sh'
 stop_old "$PIDFILE" '\./caddy run '
+stop_old settings.pid '\./gateway-settings '
 echo $$ > run.pid
+rm -f settings.changed
 
 CADDY=""
 start() {
@@ -401,15 +509,27 @@ start() {
     STARTED=$(date +%s)
     say "started Caddy $CADDY on $BIND:$PORT for: $(echo $HOSTS); services: $(printf '%s\n' "$SERVICES" | cut -f1 | tr '\n' ' ')"
 }
-stop() {
-    trap - TERM INT HUP
+# The settings page's backend: on a socket here, only Caddy (behind the password) talks to it. It writes the settings
+# file and settings.changed, and the loop below starts everything again with the new settings.
+HELPER=""
+start_helper() {
+    ./gateway-settings "$D/settings.sock" "$D/$CONF" < /dev/null >> "$LOG" 2>&1 &
+    HELPER=$!
+    echo "$HELPER" > settings.pid
+}
+halt() {   # Caddy and the settings backend
     if [ -n "$CADDY" ] && alive "$CADDY"; then
         kill "$CADDY" 2>/dev/null
         i=0; while alive "$CADDY" && [ $i -lt 25 ]; do sleep 0.2; i=$((i + 1)); done
         alive "$CADDY" && kill -9 "$CADDY" 2>/dev/null
         wait "$CADDY" 2>/dev/null
     fi
-    rm -f "$PIDFILE"
+    if [ -n "$HELPER" ]; then kill "$HELPER" 2>/dev/null; wait "$HELPER" 2>/dev/null; fi
+    rm -f "$PIDFILE" settings.pid settings.sock
+}
+stop() {
+    trap - TERM INT HUP
+    halt
     [ "$(cat run.pid 2>/dev/null)" = $$ ] && rm -f run.pid
     say "stopped"
     exit 0
@@ -418,9 +538,18 @@ trap stop TERM INT HUP
 
 say "MPC $MPC started"
 DELAY=5
+start_helper
 start
 LAST=$(date +%s)
 while kill -0 "$MPC" 2>/dev/null; do
+    if [ -e settings.changed ]; then
+        rm -f settings.changed
+        say "settings changed on the settings page: starting again with them"
+        halt
+        trap - TERM INT HUP
+        exec sh "$D/gateway-run.sh"
+    fi
+    alive "$HELPER" || { wait "$HELPER" 2>/dev/null; say "the settings backend exited; starting it again"; start_helper; }
     if ! alive "$CADDY"; then
         wait "$CADDY" 2>/dev/null; rc=$?
         ran=$(( $(date +%s) - STARTED ))

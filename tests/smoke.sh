@@ -54,8 +54,8 @@ backend 6761 files-backend; backend 6720 "host={hostport}"
 sleep 1000 & MPC1=$!
 ADDIN_DIR=$G MPC_PID=$MPC1 sh $G/gateway-run.sh &
 check "answers on 443, and only with the password" up
-PW=$(cat $G/password.txt 2>/dev/null)
-check "a password made at the first start, root only" "[ \${#PW} -eq 20 ] && [ \"\$(stat -c %a $G/password.txt)\" = 600 ]"
+PW=mpc
+check "the default login, mpc / mpc, and the page says to change it" "[ ! -e $G/password.txt ] && get https://mpc:mpc@127.0.0.1/ && grep -q \"still has the default password\" /tmp/out"
 check "a wrong password is refused" "! get https://mpc:wrong-password@127.0.0.1/ && grep -q 401 /tmp/err"
 check "the start page with the password, the services listed in the page itself" "get https://mpc:\$PW@127.0.0.1/ && grep -q services.json /tmp/out && grep -q \">MPC File Browser</a>\" /tmp/out && grep -q \"data-port=.16720.\" /tmp/out"
 check "services.json needs the password" "! get https://127.0.0.1/services.json && grep -q 401 /tmp/err"
@@ -77,6 +77,12 @@ check "a service that starts later turns up, without a reload" "waitfor \"svc | 
 rm -rf /addins/remote
 check "an addin removed while it runs disappears, its port closes" "waitfor \"! svc | grep -q remote\" && waitfor \"! listening 16720\" && grep -q \"Caddy reloaded\" $G/log.txt"
 check "the other routes survive the reload" "get https://mpc:\$PW@127.0.0.1/files/ && grep -qx files-backend /tmp/out"
+check "the settings page, behind the password" "get https://mpc:\$PW@127.0.0.1/settings/ && grep -q name=.bind. /tmp/out && ! get https://127.0.0.1/settings/ && grep -q 401 /tmp/err"
+check "the settings, through Caddy to its backend, behind the password" "get https://mpc:\$PW@127.0.0.1/settings/api && grep -q .rescan_s.:.2. /tmp/out && ! grep -q ,.password.: /tmp/out && ! get https://127.0.0.1/settings/api"
+check "a POST without the settings header is refused (403)" "! get --post-data port=8443 https://mpc:\$PW@127.0.0.1/settings/api && grep -q 403 /tmp/err"
+check "a password saved on the settings page: the gateway starts again, the new one works, the old one not" "get --header \"X-Gateway-Settings: 1\" --post-data password=saved-pass https://mpc:\$PW@127.0.0.1/settings/api && grep -q .ok.:true /tmp/out && waitfor \"get https://mpc:saved-pass@127.0.0.1/\" && ! get https://mpc:mpc@127.0.0.1/ && ! grep -q \"default password\" /tmp/out"
+PW=saved-pass
+check "the routes are back after it" "get https://mpc:\$PW@127.0.0.1/files/ && grep -qx files-backend /tmp/out"
 FIRST=$(cat $G/caddy.pid)
 echo "     Caddy memory under QEMU: $(grep VmRSS /proc/$FIRST/status)"
 sed -i "s/^password=.*/password=changed-in-conf/" $G/mpc_gateway_addin.conf

@@ -28,6 +28,9 @@ docker run --rm --platform "$PLATFORM" -u "$(id -u):$(id -g)" -v "$PWD":/b -w /b
   echo "highest glibc symbol version: $max"
   eval "case \"\$max\" in $GLIBC_OK) ;; *) echo \"too new for the oldest MPC OS this targets: \$max\" >&2; exit 1 ;; esac"
   readelf -d $OUT/mpc_gateway_addin.so | grep NEEDED
+  gcc $F -static -o $OUT/gateway-settings src/settings.c   # static: no glibc version to match, runs anywhere
+  strip $OUT/gateway-settings
+  if readelf -d $OUT/gateway-settings 2>/dev/null | grep -q NEEDED; then echo "gateway-settings is not static" >&2; exit 1; fi
 '
 tools/fetch-upstream.sh "$ARCH" "$OUT"
 cp -f mpc_gateway_addin.conf addin.manifest gateway-run.sh "$OUT"/   # the release workflow packages it with the installer

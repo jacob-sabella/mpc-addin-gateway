@@ -20,13 +20,8 @@ It works on MPC OS standalone devices (MPC Live, One, X, Key and Force, and the 
 
 ## Connecting
 
-The password is made at the first start, and you can read it over SSH:
-
-```sh
-cat /data/mpc-addins/gateway/password.txt
-```
-
-The user name is always **mpc**. To pick your own password instead, set `password=` in the settings (below).
+Log in as **mpc**, password **mpc**. Change the password on the start page's **Settings** page (or with `password=` in
+the settings file, below), above all before you open the gateway to a network: until you do, the start page says so.
 
 By default the gateway, too, listens on the device only. Reach it through one SSH tunnel for everything:
 
@@ -56,6 +51,17 @@ so, with a link back to the start page.
 The gateway only lists what addins declare. It never guesses by looking at which programs listen where or by sending
 requests to ports: MPC's own internal ports look just like an addin's from outside, and a stray request could disturb
 MPC while you play.
+
+## The settings page
+
+**Settings**, at the top of the start page, edits every setting in the list below: the user name and password, where
+the gateway listens and on which port, your forwards, and the advanced ones. Save, and the gateway starts again with
+them within a few seconds (the page then opens the new address). Two of them, whether it runs at all and its CPU
+priority, take effect at MPC's next start. Saving the device-only setting from another computer ends your access there,
+except through an SSH tunnel; the page says so.
+
+The page stands in for editing the file over SSH, and changes nothing else: the settings file is rewritten in place,
+comments kept.
 
 ## For addin authors: declaring a web page
 
@@ -94,7 +100,8 @@ keeps your edits.
 | `enabled` | `1` | `0` starts nothing |
 | `bind` | `127.0.0.1` | `127.0.0.1`: the device only, through a tunnel. `0.0.0.0`: every network the device is on |
 | `port` | `443` | the HTTPS port (MPC's own web server has 80) |
-| `password` | empty | the password for user `mpc`, 8 characters or more, no spaces, quotes or backslashes. Empty: the one in `password.txt`, made at the first start |
+| `user` | empty | the user name. Empty: `mpc` |
+| `password` | empty | the password, no spaces, quotes or backslashes. Empty: `mpc` |
 | `forward` | empty | your own ports, `name:local_port:gateway_port`, separated by spaces |
 | `nice` | `19` | Caddy's CPU priority, 0 to 19 (higher is gentler). It also runs in the idle disk class, on one CPU core |
 | `memory_mb` | `64` | a soft memory limit (Go's `GOMEMLIMIT`) |
@@ -103,17 +110,23 @@ keeps your edits.
 | `config` | empty | a Caddyfile of your own, used instead of the one made from these settings and the addins |
 | `addins_dir` | empty | the folder that holds every addin's folder (empty: `/data/mpc-addins`) |
 
-The folder also holds `password.txt` (root only), `password.hash` (what Caddy is given), the `Caddyfile` written at each
-start, the start page in `www/`, and the certificate authority in `data/`. Uninstalling leaves those, and so the folder,
-in place. Delete the folder to remove them; a new install then makes a new password and a new certificate authority.
+The folder also holds `password.hash` (what Caddy is given), the `Caddyfile` written at each start, the pages in
+`www/`, and the certificate authority in `data/`. Uninstalling leaves those, and so the folder, in place. Delete the
+folder to remove them; a new install then makes a new certificate authority.
 
 ## Security notes
 
 - One password protects every page, with HTTP basic authentication over HTTPS. Anyone who has it can do whatever each
-  addin allows (see the table in mpc-vst-plugins' docs/ADDINS.md, "Addins that listen on the network").
+  addin allows (see the table in mpc-vst-plugins' docs/ADDINS.md, "Addins that listen on the network"), and change the
+  gateway's settings.
+- The default password, `mpc`, is the same on every device. The gateway listens on the device only until you open it,
+  and the start page warns while the default is in use: change it first.
+- The settings page's backend (`gateway-settings`, a small program of this repo, not Caddy) listens only on a socket in
+  the gateway's folder, which only Caddy reaches, behind the password. It writes nothing but the settings file, checks
+  every value, and refuses a change without the page's own request header, so a page on another site can't change the
+  settings through a browser that is logged in.
 - Caddy has no limit on login attempts. Each wrong password costs it one bcrypt hash (cost 10), and it runs on one core
-  at the lowest priority, so guessing can't take MPC's CPU away. A long password (the one made for you has 20 random
-  characters) is what stops guessing.
+  at the lowest priority, so guessing can't take MPC's CPU away. A long password is what stops guessing.
 - Caddy runs as root, as everything on the device does.
 
 ## Installing
@@ -133,7 +146,8 @@ Device testing is recorded in `tested.json`.
 MPC Gateway is an **addin**: a small shared library that MPC loads as it starts, through `LD_PRELOAD`. The library does
 one thing. As MPC starts, it launches `gateway-run.sh` from its folder as a separate process and returns. The script
 writes Caddy's config from the settings and the addins' manifests, runs Caddy (its own static binary, in the same
-folder), keeps the start page current, reloads Caddy when an addin comes or goes or the device's addresses change,
+folder) and the settings page's backend, keeps the start page current, starts everything again after a save on the
+settings page, reloads Caddy when an addin comes or goes or the device's addresses change,
 restarts it if it exits, and stops it when MPC exits. So the gateway runs exactly as long as MPC does.
 
 ### Why the library starts a program
@@ -156,7 +170,7 @@ tests/test.sh         # host tests: the library and the script (sh, and BusyBox)
 tests/smoke.sh armv7  # the real Caddy run by the script under QEMU, with stand-in addins (and: aarch64)
 ```
 
-`build.sh` compiles the library in Docker (QEMU for the target CPU; Gen1 against glibc 2.31, so it loads on older MPC
+`build.sh` compiles the library and `gateway-settings` (static) in Docker (QEMU for the target CPU; Gen1 against glibc 2.31, so it loads on older MPC
 OS) and runs `tools/fetch-upstream.sh`, which downloads Caddy's release tarball and licence and checks them against
 `upstream.env`.
 
@@ -173,7 +187,7 @@ tag, run Upstream by hand with that tag, or locally: `tools/upstream-check.sh <t
 ## Vibe Coded
 
 This project was built with [Claude Code](https://claude.ai/code): the addin library, the launch script, the settings
-handling, the start page, the tests and the build tooling. Caddy itself is the unmodified upstream release.
+handling, the start and settings pages and their backend, the tests and the build tooling. Caddy itself is the unmodified upstream release.
 
 ## Credits and license
 

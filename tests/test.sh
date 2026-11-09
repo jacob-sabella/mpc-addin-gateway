@@ -12,6 +12,7 @@ T=$(mktemp -d)
 cleanup() { pkill -f "$T/" 2>/dev/null || true; rm -rf "$T"; }
 trap cleanup EXIT
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -fPIC -shared -fvisibility=hidden -o "$T/mpc_gateway_addin.so" src/gateway.c
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -o "$T/gateway-settings" src/settings.c
 mkdir -p "$T/bin"
 # A stand-in that sleeps under any name. Not a copy of sleep: a multi-call coreutils picks the tool from its name.
 printf '#include <stdlib.h>\n#include <unistd.h>\nint main(int c, char **v) { sleep(c > 1 ? atoi(v[1]) : 60); return 0; }\n' |
@@ -31,7 +32,7 @@ field() { sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f"$2"; }   # fields counte
 G=$T/addins/gateway
 setup() {
     rm -rf "$T/addins"; mkdir -p "$G"
-    cp "$T/mpc_gateway_addin.so" gateway-run.sh "$G/"
+    cp "$T/mpc_gateway_addin.so" "$T/gateway-settings" gateway-run.sh "$G/"
     cat > "$G/caddy" <<'EOF'
 #!/bin/sh
 case "$1" in
@@ -57,6 +58,7 @@ mpc() {   # start "MPC" (or another program) with the addin preloaded; sets PID
 started() { wait_for "[ -s $G/fake.pid ]"; }
 stop_mpc() { kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; wait_for "[ ! -e $G/run.pid ]" || true; }
 svc() { grep -q "$1" "$G/www/services.json"; }
+api() { curl -s --max-time 5 --unix-socket "$G/settings.sock" "$@" http://gateway/settings/api; }   # the settings backend
 
 echo "--- the device's BusyBox"
 # The devices' BusyBox (1.36.1, MPC OS 3.x) lacks some options other builds have: head -c and head -NUM (2026-11-09).
@@ -86,8 +88,12 @@ for SH in /bin/sh ${BB:+busybox}; do
     check "script has its own session" '[ "$(field "$RUNNER" 4)" != "$(field "$PID" 4)" ]'
     check "nice value from the settings" '[ "$(field "$C" 17)" = 17 ]'
     check "caddy made executable" '[ -x "$G/caddy" ]'
-    check "a password made, root only" '[ "$(wc -c < "$G/password.txt")" = 21 ] && [ "$(stat -c %a "$G/password.txt")" = 600 ]'
-    check "only its hash in the Caddyfile, user mpc" 'grep -q "mpc \$2a\$10\$fakehash" "$G/Caddyfile" && ! grep -q "$(cat "$G/password.txt")" "$G/Caddyfile"'
+    check "default login mpc / mpc, only its hash in the Caddyfile" 'grep -q "mpc \$2a\$10\$fakehash" "$G/Caddyfile" && [ "$(cat "$G/password.sum")" = "$(printf %s mpc | sha256sum | cut -d" " -f1)" ] && [ ! -e "$G/password.txt" ]'
+    check "the start page warns about the default password, links Settings" 'grep -q "still has the default password, mpc" "$G/www/index.html" && grep -q "href=\"/settings/\">Settings" "$G/www/index.html"'
+    check "the settings page, its backend on a socket here behind the password" '[ -s "$G/www/settings.html" ] && grep -q "reverse_proxy unix/$G/settings.sock" "$G/Caddyfile" && wait_for "[ -S $G/settings.sock ]"'
+    check "settings backend: GET shows the settings, never the password" 'api | grep -q "\"port\":\"\",.*\"nice\":\"17\".*\"default_password\":true" && ! api | grep -q "\"password\""'
+    check "settings backend: a POST without its header is refused" 'api -X POST -d port=8443 | grep -q "header is missing" && [ ! -e "$G/settings.changed" ] && ! grep -q "^port=" "$G/mpc_gateway_addin.conf"'
+    check "settings backend: a bad value is refused, nothing written" 'api -X POST -H "X-Gateway-Settings: 1" -d "bind=0.0.0.0&port=0" | grep -q "port: a port" && ! grep -q "bind=0.0.0.0" "$G/mpc_gateway_addin.conf"'
     check "device only by default" 'grep -q "default_bind 127.0.0.1" "$G/Caddyfile" && grep -q "^https://127.0.0.1:443, https://localhost:443 {" "$G/Caddyfile"'
     check "a port service gets port + 10000" 'grep -q "^https://127.0.0.1:16720, https://localhost:16720 {" "$G/Caddyfile" && grep -q "reverse_proxy 127.0.0.1:6720 {" "$G/Caddyfile"'
     check "a path service under its path, port from its settings" 'grep -q "redir /files /files/" "$G/Caddyfile" && grep -q "handle /files/\* {" "$G/Caddyfile" && grep -q "reverse_proxy 127.0.0.1:6799 {" "$G/Caddyfile"'
@@ -96,7 +102,13 @@ for SH in /bin/sh ${BB:+busybox}; do
     check "MPC itself still running" '! gone "$PID"'
     manifest commander 'ADDIN_NAME="MPC Commander"' ADDIN_WEB_PORT=6730
     check "an addin installed while it runs is picked up, Caddy reloaded" 'wait_for "grep -q 16730 $G/Caddyfile" && wait_for "[ -s $G/fake.reloads ]"'
+    RUN0=$(cat "$G/run.pid")
+    check "settings saved from the page: written, and the gateway starts again with them" 'api -X POST -H "X-Gateway-Settings: 1" -d "port=8443&user=jacob&password=n3w-pass" | grep -q "\"ok\":true" && wait_for "grep -q \"^https://127.0.0.1:8443\" $G/Caddyfile" && grep -q "jacob \$2a" "$G/Caddyfile"'
+    check "the same script (exec), a new Caddy, the backend back, no banner" 'wait_for "! gone \$(cat $G/fake.pid) && [ \$(cat $G/fake.pid) != $C ]" && [ "$(cat "$G/run.pid")" = "$RUN0" ] && wait_for "[ -S $G/settings.sock ]" && ! grep -q "default password" "$G/www/index.html" && grep -q "settings changed on the settings page" "$G/log.txt"'
+    check "the settings file keeps its other lines" 'grep -qx "nice=17" "$G/mpc_gateway_addin.conf" && grep -qx "password=n3w-pass" "$G/mpc_gateway_addin.conf"'
+    C=$(cat "$G/fake.pid"); H=$(cat "$G/settings.pid")
     stop_mpc
+    check "the settings backend stops too, its socket removed" 'wait_for "gone $H" && [ ! -e "$G/settings.sock" ]'
     check "caddy stopped after MPC exits" 'wait_for "gone $C" && [ -e "$G/fake.stopped" ]'
     check "script gone too, pid files removed" 'wait_for "gone $RUNNER" && [ ! -e "$G/run.pid" ] && [ ! -e "$G/caddy.pid" ]'
 done
@@ -137,10 +149,12 @@ check "an addin removed: dropped, Caddy reloaded" 'wait_for "! grep -q \"\\\"id\
 stop_mpc
 
 echo "--- settings"
-setup "bind=1.2.3.4; rm -rf /" "port=99999" "password=short"
+setup "bind=1.2.3.4; rm -rf /" "port=99999" "password=has space" "user=bad name!"
+manifest mine ADDIN_WEB_PORT=6900 ADDIN_WEB_PATH=/settings/
 mpc; started
 check "bad bind and port fall back to the defaults" 'grep -q "default_bind 127.0.0.1" "$G/Caddyfile" && grep -q "https://127.0.0.1:443" "$G/Caddyfile" && grep -q "bind=1.2.3.4; rm -rf /: only" "$G/log.txt"'
-check "a short password refused: one made instead" 'grep -q "shorter than 8 characters" "$G/log.txt" && [ -s "$G/password.txt" ]'
+check "a bad password and user name: mpc / mpc" 'grep -q "using the default, mpc" "$G/log.txt" && grep -q "user=bad name!: letters" "$G/log.txt" && grep -q "mpc \$2a" "$G/Caddyfile"'
+check "an addin can't take /settings/: a port of its own" 'grep -q "mine: ADDIN_WEB_PATH=/settings/ is the gateway.s own" "$G/log.txt" && grep -q ":16900 {" "$G/Caddyfile"'
 stop_mpc
 setup "bind=0.0.0.0" "port=8443" "password=a-long-password"
 mpc; started
