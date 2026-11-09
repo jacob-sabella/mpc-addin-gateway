@@ -128,3 +128,11 @@ device can get the lines by hand (they're the device copies, not the repos).
   commander 5403b12, filebrowser 4dd069e (also ADDIN_LOGIN=1). All three check OK with addin_manifest_problems() from
   mpc-vst-plugins addin-web-keys. Their next release needs tools from that branch: the pinned checker (a0dda4f) refuses
   unknown ADDIN_* keys.
+- MPC Sample with the real Remote (2026-11-09): Remote's standalone (its own process, from a temp copy) on 6720, and
+  addins_dir pointed (through the settings API) at the three repos' declare-web-page manifests. The start page listed
+  them from those manifests: Remote up, Commander and FileBrowser down (not running there). Through 16720: /info 200,
+  the page 200, 401 without the password, /stream multipart (160 kB in 3 s). Caddy RSS 49-55 MB; 13% of one core under
+  200 page loads, 0% while relaying the stream. PLAY could NOT be measured: Remote's button fallback on the Sample writes
+  /data/midi.in, which nothing reads while the midi-inject addin isn't loaded (screen unchanged). The four test presses
+  (24 bytes) were trimmed off midi.in again (back to 183 bytes); standalone stopped, temp folders deleted, addins_dir
+  restored; the gateway left running.
