@@ -77,8 +77,9 @@ One line each in their addin.manifest (and the release that ships it):
 - To live under the main port instead of +10000 ports (the user's preference, 2026-11-09): FileBrowser writes
   `server.baseURL` and declares `ADDIN_WEB_PATH=/files/`; Remote's page and Commander's web app use root-absolute
   URLs (`/stream`, `/ws`, ...) that must become relative before they can declare a path.
-- mpc-addin-filebrowser and mpc-addin-remote: their is_mpc_process() only accepts "MPC", so they never start on the
-  MPC Sample (whose binary is "/usr/bin/MPC Sample"); Commander already accepts both.
+- mpc-addin-filebrowser and mpc-addin-remote: their is_mpc_process() only accepts "MPC", so their preloaded library never
+  starts on the MPC Sample (whose binary is "/usr/bin/MPC Sample"); Commander already accepts both. Remote does run on
+  the Sample through its `standalone` program (its own process; README, tested on 1.3.0.12 on 2026-10-16).
 For the device test (step 6) the gateway's own routes.d / forward= can stand in, or the installed manifests on the test
 device can get the lines by hand (they're the device copies, not the repos).
 
@@ -120,3 +121,10 @@ device can get the lines by hand (they're the device copies, not the repos).
 - Video (stop-condition evidence): docs/screenshots/landing-key37-declared.mp4, the start page served by the Key 37,
   services from declared manifests (copies with ADDIN_WEB_* lines in an addins_dir test folder), the declared /demo/
   going down -> up -> down as a stand-in starts and stops; 31 s at real speed, 64 frames of the live page.
+
+## User decisions (2026-11-09, after the stop)
+- Published gateway-addin-v0.1.0 as a PRERELEASE (user's choice): both zips, from fca7643.
+- The three manifest changes are committed locally on branch declare-web-page in each repo (not pushed): remote d9d84d5,
+  commander 5403b12, filebrowser 4dd069e (also ADDIN_LOGIN=1). All three check OK with addin_manifest_problems() from
+  mpc-vst-plugins addin-web-keys. Their next release needs tools from that branch: the pinned checker (a0dda4f) refuses
+  unknown ADDIN_* keys.
