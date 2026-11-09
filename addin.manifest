@@ -1,0 +1,8 @@
+# This addin, for the shared installer in mpc-vst-plugins (tools/release/addin; the keys are in its docs/ADDINS.md).
+ADDIN_ID=gateway
+ADDIN_NAME="MPC Gateway"
+ADDIN_SO=mpc_gateway_addin.so
+ADDIN_CONF=mpc_gateway_addin.conf
+ADDIN_FILES="caddy gateway-run.sh LICENSE-caddy"
+ADDIN_DONE="The password (user mpc) is in /data/mpc-addins/gateway/password.txt once MPC has started. With bind=0.0.0.0, open https://<device> in a browser; on the device only, ssh -N -L 8443:127.0.0.1:443 root@<device>, then https://localhost:8443."
+ADDIN_NETWORK=1
