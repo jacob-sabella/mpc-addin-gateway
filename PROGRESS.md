@@ -22,7 +22,11 @@ declare in addin.manifest). Each step is ticked with the date and its evidence (
       /bin/sh and a static BusyBox from busybox:1.36-musl; manifests: collisions move up past forward= ports, `..` paths,
       bad ports, a settings file outside the addin's folder never read, no reload when nothing changed, reload on
       install/removal; setting fallbacks; refusals). Smoke (real Caddy, QEMU) covers the keys, up/down and a removed addin.
-- [ ] 5. Workflows + README
+- [x] 5. Workflows + README (2026-11-09, offline). test.yml/release.yml/upstream.yml from filebrowser's; release.yml
+      pins mpc-vst-plugins 03af9a4 (main; its addin-release.yml has package_dir_aarch64/build_aarch64); YAML parses.
+      README in the filebrowser style (not-a-Caddy-project warning, Vibe Coded, Caddy Apache-2.0 credit). Also found
+      while checking the Sample: its process is "/usr/bin/MPC Sample", so the library now starts there too (host test
+      "the MPC Sample's process (MPC Sample) starts it" ok).
 - [ ] 6. Device test: Key 37 and MPC Sample
 - [ ] 7. mpc-vst-plugins branch (local commit only)
 - [ ] 8. Repo public, release dry run, draft 0.1.0
@@ -33,5 +37,7 @@ One line each in their addin.manifest (and the release that ships it):
   together with writing FileBrowser Quantum's `server.baseURL: "/files/"` in filebrowser-run.sh; until then it gets port 16760.
 - mpc-addin-remote: `ADDIN_WEB_PORT=6720` and `ADDIN_WEB_PORT_SETTING=port` (check its settings key name).
 - mpc-addin-commander: `ADDIN_WEB_PORT=6730` and `ADDIN_WEB_PORT_SETTING=port` (check its settings key name).
+- mpc-addin-filebrowser and mpc-addin-remote: their is_mpc_process() only accepts "MPC", so they never start on the
+  MPC Sample (whose binary is "/usr/bin/MPC Sample"); Commander already accepts both.
 For the device test (step 6) the gateway's own routes.d / forward= can stand in, or the installed manifests on the test
 device can get the lines by hand (they're the device copies, not the repos).

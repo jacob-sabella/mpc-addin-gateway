@@ -16,7 +16,7 @@ mkdir -p "$T/bin"
 # A stand-in that sleeps under any name. Not a copy of sleep: a multi-call coreutils picks the tool from its name.
 printf '#include <stdlib.h>\n#include <unistd.h>\nint main(int c, char **v) { sleep(c > 1 ? atoi(v[1]) : 60); return 0; }\n' |
     gcc -x c -o "$T/bin/MPC" -
-cp "$T/bin/MPC" "$T/bin/other"
+cp "$T/bin/MPC" "$T/bin/other"; cp "$T/bin/MPC" "$T/bin/MPC Sample"
 BB=$(command -v busybox || true)
 if [ -z "$BB" ] && command -v docker > /dev/null; then
     docker run --rm busybox:1.36-musl cat /bin/busybox > "$T/bin/busybox" 2>/dev/null && chmod 755 "$T/bin/busybox" && BB=$T/bin/busybox
@@ -146,6 +146,9 @@ echo "--- refusals"
 setup "enabled=0"; mpc; sleep 1
 check "enabled=0 starts nothing" '[ ! -e "$G/fake.pid" ] && grep -q "disabled in" "$T/mpc.err"'
 kill "$PID" 2>/dev/null || true
+setup; mpc "MPC Sample"
+check "the MPC Sample's process (MPC Sample) starts it" started
+stop_mpc
 setup; mpc other; sleep 1
 check "a process not named MPC starts nothing" '[ ! -e "$G/fake.pid" ] && ! grep -q mpc-gateway-addin "$T/mpc.err"'
 kill "$PID" 2>/dev/null || true

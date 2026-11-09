@@ -1,0 +1,71 @@
+# Daily: when Caddy has a newer stable release, move upstream.env to it, build and test both devices'
+# packages with it, and open a pull request (one per upstream tag). A pull request opened by this workflow's token
+# doesn't start the Test workflow, so the tests run here first and the pull request links to this run. Merging it and
+# running Release ships the new Caddy. Run it by hand with a tag to move to that one.
+#
+# A new Caddy needs a new device test (tested.json) before its release is published.
+# Needs the repository setting "Allow GitHub Actions to create and approve pull requests" (Settings > Actions > General).
+name: Upstream
+
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: A Caddy tag to move to (empty = the newest stable release)
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Newer release?
+        id: up
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          tag=$(tools/upstream-check.sh $TAG)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then echo "upstream.env is up to date" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          branch="upstream/$tag"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "$branch exists already: nothing to do" >> "$GITHUB_STEP_SUMMARY"; echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.up.outputs.tag != ''
+        uses: docker/setup-qemu-action@v3
+        with: { platforms: "arm,arm64" }
+      - name: Build and test with it
+        if: steps.up.outputs.tag != ''
+        run: |
+          sudo apt-get install -y -q busybox
+          tests/test.sh
+          ./build.sh armv7 && tests/smoke.sh armv7
+          ./build.sh aarch64 && tests/smoke.sh aarch64
+      - name: Open the pull request
+        if: steps.up.outputs.tag != ''
+        env:
+          TAG: ${{ steps.up.outputs.tag }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          . ./upstream.env
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch -c "upstream/$TAG"
+          git commit -qam "Caddy $TAG"
+          git push -q origin "upstream/$TAG"
+          gh pr create --base "${{ github.event.repository.default_branch }}" --head "upstream/$TAG" \
+            --title "Caddy $TAG" --body "$(printf '%s\n' \
+              "Moves upstream.env to [$TAG](https://github.com/$CADDY_REPO/releases/tag/$TAG) (hashes of the files as downloaded now)." \
+              "" \
+              "Built for armv7 and aarch64 and tested in $RUN: the host tests and the real binary under QEMU (tests/smoke.sh)." \
+              "" \
+              "Before merging, read the upstream release notes for config changes. After merging, run Release with a new version.")"

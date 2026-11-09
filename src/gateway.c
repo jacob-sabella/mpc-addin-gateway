@@ -8,8 +8,8 @@
 // before the first fork (MPC may already have threads from other addins), so the children only make plain system
 // calls until the exec. It runs detached (its own session), without LD_PRELOAD, with every signal at its default, at
 // the settings' nice value and in the idle I/O class, so Caddy gets disk time only when MPC isn't using it.
-// It starts only in the process whose executable is named MPC; anything else that inherits LD_PRELOAD loads it and
-// does nothing.
+// It starts only in the process whose executable is named MPC (or MPC Sample, on the MPC Sample); anything else that
+// inherits LD_PRELOAD loads it and does nothing.
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
@@ -117,7 +117,8 @@ static int is_mpc_process(void)
     if (n <= 0) return 0;
     exe[n] = 0;
     const char *base = strrchr(exe, '/');
-    return !strcmp(base ? base + 1 : exe, "MPC");
+    base = base ? base + 1 : exe;
+    return !strcmp(base, "MPC") || !strcmp(base, "MPC Sample");   // the MPC Sample's binary is /usr/bin/MPC Sample
 }
 
 // The grandchild, between fork and exec: raw system calls only, never a libc function by name. The fork happens in

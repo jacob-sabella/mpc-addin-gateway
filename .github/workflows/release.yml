@@ -1,0 +1,35 @@
+# Build the addin for MPC OS Gen1 (armv7) and Gen2 (aarch64) and attach both zips to a DRAFT release, with
+# mpc-vst-plugins' reusable workflow (its docs/ADDINS.md, "Releasing from CI"). mpc-vst-plugins is pinned to ONE commit
+# in both places below: a main commit (03af9a4, 2026-11-09). Move both together.
+# Run it from the Actions tab or `gh workflow run release.yml -f version=<x.y.z>`, then publish the draft
+# (as a prerelease while the version is 0.x) once tested.json has an entry for the version from a device test.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version for the zips, addin.manifest and INSTALL.md, e.g. 0.1.0
+        required: true
+        type: string
+      dry_run:
+        description: Build and package only (the zips as run artifacts, no draft release)
+        type: boolean
+        default: false
+
+jobs:
+  addin:
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/addin-release.yml@03af9a4141a553ce2f284afd45b67e219f63c3bb
+    permissions: { contents: write }
+    with:
+      tag: gateway-addin-v${{ inputs.version }}
+      version: ${{ inputs.version }}
+      tools_ref: 03af9a4141a553ce2f284afd45b67e219f63c3bb
+      package_dir: build
+      build: ./build.sh armv7
+      package_dir_aarch64: build/aarch64
+      build_aarch64: ./build.sh aarch64
+      host_test: tests/test.sh && tests/smoke.sh armv7 && tests/smoke.sh aarch64
+      about: "One HTTPS front door with one password (Caddy) for the web services addins declare: a start page that lists them, and a route or port for each. Device only by default; reach it through an SSH tunnel, or open it with bind=0.0.0.0."
+      license: MIT AND Apache-2.0
+      dry_run: ${{ inputs.dry_run }}

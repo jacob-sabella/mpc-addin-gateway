@@ -1,0 +1,38 @@
+# The offline tests on every push and pull request: the library and the script on the host (sh and BusyBox), then for
+# each device CPU the build (Caddy downloaded and checked against upstream.env) and the real binary run by
+# the script under QEMU (tests/smoke.sh).
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host:
+    # Skip workflow runs from fork PRs — only repo-internal pushes / PRs run.
+    # Combined with branch-protection "Require approval for first-time
+    # contributors" / "Require approval for all outside collaborators",
+    # this means only the repo owner can trigger CI.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    name: Host
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -q busybox
+      - run: tests/test.sh
+  device:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { arch: armv7, qemu: arm, name: "armv7 (MPC OS Gen1)" }
+          - { arch: aarch64, qemu: arm64, name: "aarch64 (MPC OS Gen2)" }
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with: { platforms: "${{ matrix.qemu }}" }
+      - run: ./build.sh ${{ matrix.arch }}
+      - run: tests/smoke.sh ${{ matrix.arch }}
