@@ -1,6 +1,6 @@
 # Build the addin for MPC OS Gen1 (armv7) and Gen2 (aarch64) and attach both zips to a DRAFT release, with
 # mpc-vst-plugins' reusable workflow (its docs/ADDINS.md, "Releasing from CI"). mpc-vst-plugins is pinned to ONE commit
-# in both places below: a main commit (03af9a4, 2026-11-09). Move both together.
+# in both places below: a main commit (9ca502a, 2026-11-09). Move both together.
 # Run it from the Actions tab or `gh workflow run release.yml -f version=<x.y.z>`, then publish the draft
 # (as a prerelease while the version is 0.x) once tested.json has an entry for the version from a device test.
 name: Release
@@ -19,12 +19,12 @@ on:
 
 jobs:
   addin:
-    uses: open-mpc/mpc-vst-plugins/.github/workflows/addin-release.yml@03af9a4141a553ce2f284afd45b67e219f63c3bb
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/addin-release.yml@9ca502a86f499c699d1f0e3eec8051de7b68ef29
     permissions: { contents: write }
     with:
       tag: gateway-addin-v${{ inputs.version }}
       version: ${{ inputs.version }}
-      tools_ref: 03af9a4141a553ce2f284afd45b67e219f63c3bb
+      tools_ref: 9ca502a86f499c699d1f0e3eec8051de7b68ef29
       package_dir: build
       build: ./build.sh armv7
       package_dir_aarch64: build/aarch64
