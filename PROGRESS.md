@@ -162,3 +162,7 @@ The release zips were installed on both devices with `sh install.sh -y`.
 - **MPC Key 37:** 401 without a login, 200 as mpc/mpc, the settings page answers, and a POST without `X-Gateway-Settings` gets 403. A forward from the settings API was routed, with `header_up X-MPC-Gateway-User` in the Caddyfile. Uninstalled afterwards; the drop-in matches baseline.
 - **MPC Sample:** upgraded in place, and its settings were kept (bind=0.0.0.0). The same login, API and 403 checks pass. It stays installed.
 - **Known:** the bundled installer from mpc-vst-plugins main still calls `head -c`, which the devices' BusyBox lacks. The modes come out right from a tar copy. The fix is in mpc-vst-plugins PR #785; the next release picks it up.
+- **MPC Sample idle, 0.1.1, 2026-11-09:**
+  - Over 30 s, Caddy used 0 CPU ticks while MPC used 9% of one core.
+  - Caddy's VmRSS is 47540 kB; gateway-settings' is 596 kB.
+  - Readings with MPC playing are still open: MPC ignores the injected PLAY presses.
