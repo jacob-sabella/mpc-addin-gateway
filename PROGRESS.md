@@ -52,7 +52,13 @@ declare in addin.manifest). Each step is ticked with the date and its evidence (
       **Uninstall:** `uninstall.sh -y` on both; Key 37 drop-in md5 back to c0de1549 (baseline), Sample back to no
       drop-in and no LD_PRELOAD; nothing on 443/forward ports; no caddy process. The uninstaller keeps the folder
       (password, certificates: documented); deleted by hand with the test folders. Both devices left running MPC.
-- [ ] 7. mpc-vst-plugins branch (local commit only)
+- [x] 7. mpc-vst-plugins branch addin-web-keys (2026-11-09, offline), local commits 9c243a8 + ed4ed1b, not pushed:
+      the installer, release_addin.py and catalog_check.py read and check ADDIN_WEB_PORT / _PORT_SETTING / _PATH and
+      ADDIN_LOGIN; the network prompt asks for a password with ADDIN_LOGIN=1 instead of "no login"; ADDINS.md,
+      CATALOG_SPEC.md, NOTES.md (dated device facts). tools/test_addin.sh: "installer: all passed" (sh and BusyBox).
+      tools/test_catalog.py: 181 tests, 20 failures, all StoreTest "error: MPC did not stop"; the same failure on a
+      clean origin/main checkout, so environmental here, not this change. Gateway manifest gets ADDIN_LOGIN=1 only once
+      a release pins tools that accept it (the release now pins 03af9a4, whose checker refuses unknown keys).
 - [ ] 8. Repo public, release dry run, draft 0.1.0
 
 ## Changes other addins need (not made here)
