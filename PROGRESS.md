@@ -155,3 +155,10 @@ device can get the lines by hand (they're the device copies, not the repos).
   the installed FileBrowser untouched): through the gateway, FileBrowser opened straight to the drives as user mpc
   (loginMethod proxy, every permission), no FileBrowser login; a client header naming admin still came in as mpc.
   Cleaned up: test copy stopped and deleted, gateway uninstalled, drop-in c0de1549, MPC running.
+
+## 0.1.1 (2026-11-09)
+
+The release zips were installed on both devices with `sh install.sh -y`.
+- **MPC Key 37:** 401 without a login, 200 as mpc/mpc, the settings page answers, and a POST without `X-Gateway-Settings` gets 403. A forward from the settings API was routed, with `header_up X-MPC-Gateway-User` in the Caddyfile. Uninstalled afterwards; the drop-in matches baseline.
+- **MPC Sample:** upgraded in place, and its settings were kept (bind=0.0.0.0). The same login, API and 403 checks pass. It stays installed.
+- **Known:** the bundled installer from mpc-vst-plugins main still calls `head -c`, which the devices' BusyBox lacks. The modes come out right from a tar copy. The fix is in mpc-vst-plugins PR #785; the next release picks it up.
