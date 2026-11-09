@@ -77,6 +77,11 @@ ADDIN_WEB_PATH=/files/        # optional: your pages work under this path (all l
 nothing else. Either way, requests reach it with `Host: 127.0.0.1:<port>`, as they would through an SSH tunnel, plus
 the usual `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` headers.
 
+Every request also carries `X-MPC-Gateway-User`: the user who logged in to the gateway. The gateway sets it itself,
+replacing any value a client sent, so an addin can skip its own login and take that user instead. Do that only while
+your server listens on the device only (`127.0.0.1`): anything that reaches it directly could send the header too.
+MPC File Browser does this when you turn on `gateway_login=1` in its settings.
+
 The gateway reads only those keys, and `ADDIN_NAME` and `ADDIN_CONF`, from your manifest, as text. It never runs it.
 
 ## Your own routes

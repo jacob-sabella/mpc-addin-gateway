@@ -165,9 +165,12 @@ auth() {
     echo "		$USER_NAME $HASH"
     echo "	}"
 }
+# Every request passed on carries the logged-in user in X-MPC-Gateway-User (a value a client sent is replaced), so an
+# addin listening on the device only can take the gateway's login instead of asking again (FileBrowser: gateway_login=1).
 proxy() {   # indent, port
     echo "$1reverse_proxy 127.0.0.1:$2 {"
     echo "$1	header_up Host 127.0.0.1:$2"
+    echo "$1	header_up X-MPC-Gateway-User {http.auth.user.id}"
     echo "$1}"
 }
 # Caddy's config: $1 = the file to write, $2 = your routes to put in it.

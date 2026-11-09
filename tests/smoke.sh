@@ -50,7 +50,7 @@ backend() {   # port body
     HOME=/tmp /tmp/backend-caddy run --config /tmp/b$1.caddy --adapter caddyfile > /tmp/b$1.log 2>&1 &
 }
 cp $G/caddy /tmp/backend-caddy; chmod 755 /tmp/backend-caddy
-backend 6761 files-backend; backend 6720 "host={hostport}"
+backend 6761 files-backend; backend 6720 "host={hostport} user={http.request.header.X-MPC-Gateway-User}"
 sleep 1000 & MPC1=$!
 ADDIN_DIR=$G MPC_PID=$MPC1 sh $G/gateway-run.sh &
 check "answers on 443, and only with the password" up
@@ -64,7 +64,8 @@ check "a path service: up, at its path, port from its settings" "svc | grep -q \
 check "the path route reaches it, with the password only" "get https://mpc:\$PW@127.0.0.1/files/ && grep -qx files-backend /tmp/out && ! get https://127.0.0.1/files/"
 check "the path without its slash is sent to it" "get https://mpc:\$PW@127.0.0.1/files && grep -qx files-backend /tmp/out"
 check "a port service: up, on its port + 10000, markup taken out of its name" "svc | grep -q \"\\\"id\\\":\\\"remote\\\",\\\"name\\\":\\\"MPC Remote b\\\",\\\"port\\\":6720,\\\"path\\\":\\\"\\\",\\\"gateway_port\\\":16720,\\\"up\\\":true\""
-check "its port reaches it, Host as through a tunnel, password only" "up 16720 && get https://mpc:\$PW@127.0.0.1:16720/ && grep -qx host=127.0.0.1:6720 /tmp/out"
+check "its port reaches it, Host as through a tunnel, password only" "up 16720 && get https://mpc:\$PW@127.0.0.1:16720/ && grep -q \"^host=127.0.0.1:6720 \" /tmp/out"
+check "the logged-in user passed on in X-MPC-Gateway-User, one a client sends replaced" "get --header \"X-MPC-Gateway-User: admin\" https://mpc:\$PW@127.0.0.1:16720/ && grep -qx \"host=127.0.0.1:6720 user=mpc\" /tmp/out"
 check "a service not running is listed as down" "svc | grep -q \"\\\"id\\\":\\\"commander\\\",.*\\\"gateway_port\\\":16730,\\\"up\\\":false\""
 check "its port says so when asked (502 with a message)" "! get https://mpc:\$PW@127.0.0.1:16730/ && grep -q 502 /tmp/err && grep -q \"MPC Commander isn.t running on this device right now\" $G/Caddyfile"
 check "a manifest holding shell code is never run" "[ ! -e /tmp/pwned ] && grep -q \"evil: ADDIN_WEB_PORT=.* is not a port, left out\" $G/log.txt"

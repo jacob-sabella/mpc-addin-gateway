@@ -95,6 +95,7 @@ for SH in /bin/sh ${BB:+busybox}; do
     check "settings backend: a POST without its header is refused" 'api -X POST -d port=8443 | grep -q "header is missing" && [ ! -e "$G/settings.changed" ] && ! grep -q "^port=" "$G/mpc_gateway_addin.conf"'
     check "settings backend: a bad value is refused, nothing written" 'api -X POST -H "X-Gateway-Settings: 1" -d "bind=0.0.0.0&port=0" | grep -q "port: a port" && ! grep -q "bind=0.0.0.0" "$G/mpc_gateway_addin.conf"'
     check "device only by default" 'grep -q "default_bind 127.0.0.1" "$G/Caddyfile" && grep -q "^https://127.0.0.1:443, https://localhost:443 {" "$G/Caddyfile"'
+    check "the login passed on to the addins (X-MPC-Gateway-User)" 'grep -q "header_up X-MPC-Gateway-User {http.auth.user.id}" "$G/Caddyfile"'
     check "a port service gets port + 10000" 'grep -q "^https://127.0.0.1:16720, https://localhost:16720 {" "$G/Caddyfile" && grep -q "reverse_proxy 127.0.0.1:6720 {" "$G/Caddyfile"'
     check "a path service under its path, port from its settings" 'grep -q "redir /files /files/" "$G/Caddyfile" && grep -q "handle /files/\* {" "$G/Caddyfile" && grep -q "reverse_proxy 127.0.0.1:6799 {" "$G/Caddyfile"'
     check "services.json lists both" 'svc "\"id\":\"files\",\"name\":\"Files\",\"port\":6799,\"path\":\"/files/\"" && svc "\"id\":\"remote\",\"name\":\"MPC Remote\",\"port\":6720,\"path\":\"\",\"gateway_port\":16720,\"up\":false"'
